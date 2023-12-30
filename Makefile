@@ -14,8 +14,6 @@ override CFLAGS += -std=gnu17 -Wall -Wextra -pedantic
 
 COMPILE = $(CC) $(CPPFLAGS) $(CFLAGS)
 
-# -O3 -march=native -Wall -Wextra -pedantic sha256.c sha256sum.c -o sha256sum
-
 all: bin/sha256sum
 
 bin/sha256sum: obj/sha256.o obj/sha256sum.o

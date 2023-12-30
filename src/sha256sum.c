@@ -12,6 +12,12 @@
 
 #include "sha256.h"
 
+#define CHECK_EFMT  -1
+#define CHECK_OKAY   0
+#define CHECK_FAIL   1
+#define CHECK_ENOENT 2
+#define CHECK_EFILE  3
+
 /* must be a power of 2 */
 #define BUF_ALIGN 32
 /* must be a multiple of BUF_ALIGN */
@@ -23,6 +29,7 @@
 }
 
 typedef struct {
+  char *arg0;
   unsigned warn:1;
   unsigned check:1;
   unsigned quiet:1;
@@ -30,38 +37,67 @@ typedef struct {
   unsigned ignore_missing:1;
 } sha256sum_opts_t;
 
-static void print_try_help(char *arg0) {
-  fprintf(stderr, "Try '%s --help' for more information.\n", arg0);
+static void print_try_help(sha256sum_opts_t *opts) {
+  fprintf(stderr, "Try '%s --help' for more information.\n", opts->arg0);
 }
 
-static void print_not_verify(char *arg0, char *opt) {
-  fprintf(stderr, "%s: %s is meaningful only with -c/--check\n", arg0, opt);
+static void print_not_verify(sha256sum_opts_t *opts, char *opt) {
+  fprintf(stderr, "%s: %s is meaningful only with -c/--check\n", opts->arg0, opt);
 }
 
 static void print_version() {
   printf("sha256sum (...) 0.0.1\n");
 }
 
-static void print_help(char *arg0) {
-  printf("TODO %s\n", arg0);
+static void print_help(sha256sum_opts_t *opts) {
+  printf("TODO %s\n", opts->arg0);
 }
 
-const char hex_char[] = "0123456789abcdef";
+static const char hex_tab[] = {
+  '0', '1', '2', '3', '4', '5', '6', '7',
+  '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+};
 
-static int sha256sum(FILE *f, const char *name, unsigned char *buf, char *arg0) {
-  //printf("sha256sum(%p, \"%s\", %p)\n", (void *)f, name, buf);
-  uint8_t hash[32];
-  // escape flag, sha256 hash in hex, two spaces,
-  // escaped filename, newline, null terminator
-  char line[1 + 64 + 2 + PATH_MAX * 2 + 1];
-  char *hash_start = line + 1;
-  char *line_ptr = hash_start;
-  char *name_ptr = line + 1 + 64 + 2;
-  size_t n, name_free = PATH_MAX * 2 + 1;
+static const uint16_t unhex_tab[] = {
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x0_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x1_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x2_
+    0,  1,  2,  3,   4,  5,  6,  7,   8,  9,256,256, 256,256,256,256, // 0x3_
+  256, 10, 11, 12,  13, 14, 15,256, 256,256,256,256, 256,256,256,256, // 0x4_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x5_
+  256, 10, 11, 12,  13, 14, 15,256, 256,256,256,256, 256,256,256,256, // 0x6_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x7_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x8_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x9_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0xa_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0xb_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0xc_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0xd_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0xe_
+  256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256  // 0xf_
+};
+
+static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *opts, uint8_t hash[32]) {
+  int ret = 0;
+  FILE *f;
+
+  if (name == NULL) {
+    f = stdin;
+    name = "-";
+  } else {
+    if ((f = fopen(name, "r")) == NULL) {
+      if (!(opts->ignore_missing && errno == ENOENT)) {
+        fprintf(stderr, "%s: %s: %s|\n", opts->arg0, name, strerror(errno));
+      }
+      return 1;
+    }
+  }
+
   SHA256_CTX ctx[] = {0};
 
   SHA256_Init(ctx);
 
+  size_t n;
   do {
     // fread yields fewer bytes than requested only at end-of-file or on error
     if ((n = fread(buf, 1, BUF_SZ, f)) > 0) {
@@ -70,34 +106,122 @@ static int sha256sum(FILE *f, const char *name, unsigned char *buf, char *arg0) 
   } while (n == BUF_SZ);
 
   if (!feof(f)) {
-    fprintf(stderr, "%s: %s: %s\n", arg0, name, strerror(errno));
-    return 1;
+    fprintf(stderr, "%s: %s: %s\n", opts->arg0, name, strerror(errno));
+    ret = 1;
+  } else {
+    SHA256_Final(hash, ctx);
   }
 
-  SHA256_Final(hash, ctx);
+  int saved_errno = errno;
+  fclose(f);
+  errno = saved_errno;
+  return ret;
+}
+
+static int load_hash(uint8_t *hash, const char *s, size_t n) {
+  const uint8_t *ptr = (uint8_t *)s;
+  uint16_t r = 0;
+  while (n--) {
+    r |= unhex_tab[ptr[0]] << 4;
+    r |= unhex_tab[ptr[1]];
+    *hash++ = (r & 0xff);
+    r &= 0xff00;
+    ptr += 2;
+  }
+
+  return r;
+}
+
+static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
+  uint8_t ref[32], hash[32];
+  int escaped = (line[0] == '\\' ? 1 : 0);
+  char *hash_start = line + escaped;
+  char *name_start = hash_start + 64 + 2;
+
+  if (load_hash(ref, hash_start, 32) != 0) return CHECK_EFMT;
+
+  // make sure there's whitespace where expected
+  if (!(hash_start[64] == ' ' || hash_start[64] == '\t')) return CHECK_EFMT;
+
+  // check the mode character and adjust the name start if needed
+  if (!(hash_start[65] == ' ' || hash_start[65] == '*')) --name_start;
+
+  char *name_src = name_start;
+  char *name_dst = line;
+  do {
+    switch (*name_src) {
+      case '\n':
+        *name_dst = '\0'; /* terminate */
+        break;
+      case '\\':
+        if (escaped) {
+          ++name_src;
+          switch (*name_src) {
+            case '\\': *name_dst++ = '\\'; break;
+            case 'n':  *name_dst++ = '\n'; break;
+            case 'r':  *name_dst++ = '\r'; break;
+            default:   return CHECK_EFMT; /* invalid escape sequence */
+          }
+          break;
+        }
+        /* fallthrough */
+      default:
+        *name_dst++ = *name_src++;
+        break;
+    }
+  } while (*name_dst != '\0');
+
+  if (sha256file(line, buf, opts, hash) != 0) {
+    return errno == ENOENT ? CHECK_ENOENT : CHECK_EFILE;
+  }
+
+  uint8_t mismatch = 0;
+  for (int i = 0; i < 32; ++i) {
+    mismatch |= ref[i] ^ hash[i];
+  }
+
+  return mismatch ? CHECK_FAIL : CHECK_OKAY;
+}
+
+static int sha256sum(const char *name, unsigned char *buf, sha256sum_opts_t *opts) {
+  uint8_t hash[32];
+  // escape flag, sha256 hash in hex, two spaces,
+  // escaped filename, newline, null terminator
+  char line[1 + 64 + 2 + PATH_MAX * 2 + 1];
+  char *hash_start = line + 1;
+  char *line_ptr = hash_start;
+  char *name_ptr = line + 1 + 64 + 2;
+  size_t name_free = PATH_MAX * 2 + 1;
+
+  if (sha256file(name, buf, opts, hash) != 0) return 1;
+
   for (size_t i = 0; i < sizeof(hash); ++i) {
-    *line_ptr++ = hex_char[hash[i] >> 4];
-    *line_ptr++ = hex_char[hash[i] & 15];
+    *line_ptr++ = hex_tab[hash[i] >> 4];
+    *line_ptr++ = hex_tab[hash[i] & 15];
   }
   *line_ptr++ = ' ';
   *line_ptr++ = ' ';
 
-  for (size_t i = 0; name[i] != '\0'; ++i) {
-    if (name_free <= 0) abort();
-    if (name[i] == '\n' || name[i] == '\r' || name[i] == '\\') {
-      // character needs to be escaped
-      line[0] = '\\';
-      hash_start = line;
-      *name_ptr++ = '\\'; --name_free;
+  if (name == NULL) {
+    *name_ptr++ = '-';
+  } else {
+    for (size_t i = 0; name[i] != '\0'; ++i) {
       if (name_free <= 0) abort();
-      switch (name[i]) {
-        case '\n': *name_ptr++ = 'n';  --name_free; break;
-        case '\r': *name_ptr++ = 'r';  --name_free; break;
-        case '\\': *name_ptr++ = '\\'; --name_free; break;
+      if (name[i] == '\n' || name[i] == '\r' || name[i] == '\\') {
+        // character needs to be escaped
+        line[0] = '\\';
+        hash_start = line;
+        *name_ptr++ = '\\'; --name_free;
+        if (name_free <= 0) abort();
+        switch (name[i]) {
+          case '\n': *name_ptr++ = 'n';  --name_free; break;
+          case '\r': *name_ptr++ = 'r';  --name_free; break;
+          case '\\': *name_ptr++ = '\\'; --name_free; break;
+        }
+      } else {
+        *name_ptr++ = name[i];
+        --name_free;
       }
-    } else {
-      *name_ptr++ = name[i];
-      --name_free;
     }
   }
   *name_ptr = '\0';
@@ -105,6 +229,97 @@ static int sha256sum(FILE *f, const char *name, unsigned char *buf, char *arg0) 
   printf("%s\n", hash_start);
 
   return 0;
+}
+
+static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts) {
+  int ret = 0;
+  if (opts->check) {
+    FILE *f;
+    size_t failed_fmt = 0, failed_read = 0, failed_csum = 0;
+
+    if (name == NULL) {
+      f = stdin;
+      name = "'standard input'";
+    } else {
+      if ((f = fopen(name, "r")) == NULL) {
+        fprintf(stderr, "%s: %s: %s\n", opts->arg0, name, strerror(errno));
+        return 1;
+      }
+    }
+
+    char *lineptr = NULL;
+    size_t lineno = 0, n = 0;
+    ssize_t r;
+    while ((r = getline(&lineptr, &n, f)) >= 0) {
+      ++lineno;
+      switch (sha256chk(lineptr, buf, opts)) {
+        case CHECK_OKAY:
+          if (!(opts->quiet || opts->status)) {
+            printf("%s: OK\n", lineptr);
+          }
+          break;
+        case CHECK_FAIL:
+          if (!opts->status) {
+            printf("%s: FAILED\n", lineptr);
+          }
+          ++failed_csum;
+          break;
+        case CHECK_EFMT:
+          if (opts->warn) {
+            fprintf(
+              stderr, "%s: %s: %zu: improperly formatted SHA256"
+              " checksum line\n", opts->arg0, lineptr, lineno
+            );
+          }
+          break;
+        case CHECK_ENOENT:
+          if (!opts->ignore_missing) { /* fallthrough */
+        case CHECK_EFILE:
+            /* I can't believe it's not Duff's device! */
+            if (!opts->status) {
+              printf("%s: FAILED open or read\n", lineptr);
+            }
+            ++failed_read;
+          }
+          break;
+      }
+    }
+
+    if (!feof(f)) {
+      fprintf(stderr, "%s: %s: %s\n", opts->arg0, name, strerror(errno));
+      ret = 1;
+    }
+
+    fclose(f);
+    errno = 0;
+    if (!opts->status) {
+      if (failed_fmt) {
+        fprintf(
+          stderr, "%s: WARNING: %zu line%s improperly formatted\n",
+          opts->arg0, failed_fmt, failed_fmt == 1 ? " is" : "s are"
+        );
+      }
+
+      if (failed_read) {
+        fprintf(
+          stderr, "%s: WARNING: %zu listed file%s could not be read\n",
+          opts->arg0, failed_read, failed_read == 1 ? "" : "s"
+        );
+      }
+
+      if (failed_csum) {
+        fprintf(
+          stderr, "%s: WARNING: %zu computed checksum%s did NOT match\n",
+          opts->arg0, failed_csum, failed_csum == 1 ? "" : "s"
+        );
+      }
+    }
+    if (failed_read || failed_csum) ret |= 1;
+  } else {
+    ret = sha256sum(name, buf, opts);
+  }
+
+  return ret;
 }
 
 int main(int argc, char *argv[]) {
@@ -127,6 +342,7 @@ int main(int argc, char *argv[]) {
 
   sha256sum_opts_t opts[] = {0};
   memset(opts, 0, sizeof(sha256sum_opts_t));
+  opts->arg0 = argv[0];
 
   // pass over the argument list twice to avoid allocating memory
   // assumes the arguments don't change between passes
@@ -135,7 +351,10 @@ int main(int argc, char *argv[]) {
     for (int n = 1; n < argc; ++n) {
       int optchk = 0;
       char *arg = argv[n];
-      if (optend || (arg[0] == '-' && arg[1] == '\0')) {
+      if (optend) {
+        ++nfiles;
+      } else if (arg[0] == '-' && arg[1] == '\0') {
+        arg = NULL;
         ++nfiles;
       } else if (arg[0] == '-') {
         if (arg[1] == '-') {
@@ -160,11 +379,11 @@ int main(int argc, char *argv[]) {
             print_version();
             return 0;
           } else if (strcmp("help", arg + 2) == 0) {
-            print_help(argv[0]);
+            print_help(opts);
             return 0;
           } else {
             fprintf(stderr, "%s: unrecognized option '%s'\n", argv[0], arg);
-            print_try_help(argv[0]);
+            print_try_help(opts);
             return 1;
           }
         } else {
@@ -180,14 +399,14 @@ int main(int argc, char *argv[]) {
               optchk = 1;
             } else {
               fprintf(stderr, "%s: invalid option '%c'\n", argv[0], flag);
-              print_try_help(argv[0]);
+              print_try_help(opts);
               return 1;
             }
           }
         }
 
         if (pass == 2 && optchk && !opts->check) {
-          print_not_verify(argv[0], arg);
+          print_not_verify(opts, arg);
           return 1;
         }
 
@@ -199,24 +418,13 @@ int main(int argc, char *argv[]) {
       /* argument must be a filename */
       ++nfiles;
 
-      FILE *f;
-      if (arg[0] == '-' && arg[1] == 0) {
-        f = stdin;
-      } else {
-        if ((f = fopen(arg, "r")) == NULL) {
-          fprintf(stderr, "%s: %s: %s\n", argv[0], arg, strerror(errno));
-          ret |= 1;
-        }
-      }
-
-      ret |= sha256sum(f, arg, buf, argv[0]);
-      if (f != stdin) fclose(f);
+      ret |= handler(arg, buf, opts);
     }
 
     if (pass == 1) continue;
 
     if (nfiles == 0) {
-      ret |= sha256sum(stdin, "-", buf, argv[0]);
+      ret |= handler(NULL, buf, opts);
     }
   }
 

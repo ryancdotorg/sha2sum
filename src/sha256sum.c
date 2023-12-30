@@ -82,36 +82,37 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
   errno = 0;
   FILE *f;
 
-  if (name == NULL) {
-    f = stdin;
-    name = "-";
-  } else {
-    if ((f = fopen(name, "r")) == NULL) {
-      ret = 1;
-      goto sha256file_ret;
-    }
-  }
-
-  SHA256_CTX ctx[] = {0};
-
-  SHA256_Init(ctx);
-
-  size_t n;
   do {
-    // fread yields fewer bytes than requested only at end-of-file or on error
-    if ((n = fread(buf, 1, BUF_SZ, f)) > 0) {
-      SHA256_Update(ctx, buf, n);
+    if (name == NULL) {
+      f = stdin;
+      name = "-";
+    } else {
+      if ((f = fopen(name, "r")) == NULL) {
+        ret = 1;
+        break;
+      }
     }
-  } while (n == BUF_SZ);
 
-  if (!feof(f)) {
-    ret = 1;
-    goto sha256file_ret;
-  }
+    SHA256_CTX ctx[] = {0};
 
-  SHA256_Final(hash, ctx);
+    SHA256_Init(ctx);
 
-sha256file_ret:
+    size_t n;
+    do {
+      // fread yields fewer bytes than requested only at eof or on error
+      if ((n = fread(buf, 1, BUF_SZ, f)) > 0) {
+        SHA256_Update(ctx, buf, n);
+      }
+    } while (n == BUF_SZ);
+
+    if (!feof(f)) {
+      ret = 1;
+      break;
+    }
+
+    SHA256_Final(hash, ctx);
+  } while (0);
+
   if (errno && !(opts->ignore_missing && errno == ENOENT)) {
     fprintf(stderr, "%s: %s: %s\n", opts->arg0, name, strerror(errno));
   }

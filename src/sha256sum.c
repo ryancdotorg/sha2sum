@@ -79,6 +79,7 @@ static const uint16_t unhex_tab[] = {
 
 static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *opts, uint8_t hash[32]) {
   int ret = 0;
+  errno = 0;
   FILE *f;
 
   if (name == NULL) {
@@ -86,10 +87,8 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
     name = "-";
   } else {
     if ((f = fopen(name, "r")) == NULL) {
-      if (!(opts->ignore_missing && errno == ENOENT)) {
-        fprintf(stderr, "%s: %s: %s|\n", opts->arg0, name, strerror(errno));
-      }
-      return 1;
+      ret = 1;
+      goto sha256file_ret;
     }
   }
 
@@ -106,15 +105,23 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
   } while (n == BUF_SZ);
 
   if (!feof(f)) {
-    fprintf(stderr, "%s: %s: %s\n", opts->arg0, name, strerror(errno));
     ret = 1;
-  } else {
-    SHA256_Final(hash, ctx);
+    goto sha256file_ret;
   }
 
-  int saved_errno = errno;
-  fclose(f);
-  errno = saved_errno;
+  SHA256_Final(hash, ctx);
+
+sha256file_ret:
+  if (errno && !(opts->ignore_missing && errno == ENOENT)) {
+    fprintf(stderr, "%s: %s: %s\n", opts->arg0, name, strerror(errno));
+  }
+
+  if (f != NULL) {
+    int saved_errno = errno;
+    fclose(f);
+    errno = saved_errno;
+  }
+
   return ret;
 }
 
@@ -151,12 +158,12 @@ static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
   do {
     switch (*name_src) {
       case '\n':
-        *name_dst = '\0'; /* terminate */
+        *name_dst++ = '\0'; /* terminate */
         break;
       case '\\':
         if (escaped) {
           ++name_src;
-          switch (*name_src) {
+          switch (*name_src++) {
             case '\\': *name_dst++ = '\\'; break;
             case 'n':  *name_dst++ = '\n'; break;
             case 'r':  *name_dst++ = '\r'; break;
@@ -169,7 +176,7 @@ static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
         *name_dst++ = *name_src++;
         break;
     }
-  } while (*name_dst != '\0');
+  } while (name_dst[-1] != '\0');
 
   if (sha256file(line, buf, opts, hash) != 0) {
     return errno == ENOENT ? CHECK_ENOENT : CHECK_EFILE;
@@ -183,50 +190,60 @@ static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
   return mismatch ? CHECK_FAIL : CHECK_OKAY;
 }
 
+static int escape_filename(char *esc, const char *src, size_t n) {
+  int ret = 0;
+  char *ptr = esc;
+
+  do {
+    if (n <= 0) abort();
+    if (*src == '\n' || *src == '\r' || *src == '\\') {
+      // character needs to be escaped
+      ret |= 1; *ptr++ = '\\'; --n;
+      if (n <= 0) abort();
+      switch (*src++) {
+        case '\n': *ptr++ = 'n';  --n; break;
+        case '\r': *ptr++ = 'r';  --n; break;
+        case '\\': *ptr++ = '\\'; --n; break;
+      }
+    } else {
+      *ptr++ = *src++;
+      --n;
+    }
+    //debugp("]]%d|%02x|%02x[[", (ptr - esc) - 1, ptr[-1], src[-1]);
+  } while (src[-1] != '\0');
+
+  return ret;
+}
+
 static int sha256sum(const char *name, unsigned char *buf, sha256sum_opts_t *opts) {
   uint8_t hash[32];
   // escape flag, sha256 hash in hex, two spaces,
   // escaped filename, newline, null terminator
-  char line[1 + 64 + 2 + PATH_MAX * 2 + 1];
-  char *hash_start = line + 1;
-  char *line_ptr = hash_start;
-  char *name_ptr = line + 1 + 64 + 2;
-  size_t name_free = PATH_MAX * 2 + 1;
+  char line[1 + 64 + 2 + PATH_MAX * 2 + 2];
+  char *line_start = line + 1;
+  char *hash_ptr = line_start;
+  char *name_ptr = hash_ptr + 64 + 2;
+  size_t name_free = PATH_MAX * 2 + 2;
 
   if (sha256file(name, buf, opts, hash) != 0) return 1;
 
   for (size_t i = 0; i < sizeof(hash); ++i) {
-    *line_ptr++ = hex_tab[hash[i] >> 4];
-    *line_ptr++ = hex_tab[hash[i] & 15];
+    *hash_ptr++ = hex_tab[hash[i] >> 4];
+    *hash_ptr++ = hex_tab[hash[i] & 15];
   }
-  *line_ptr++ = ' ';
-  *line_ptr++ = ' ';
+  *hash_ptr++ = ' ';
+  *hash_ptr++ = ' ';
 
   if (name == NULL) {
     *name_ptr++ = '-';
+    *name_ptr++ = '\0';
   } else {
-    for (size_t i = 0; name[i] != '\0'; ++i) {
-      if (name_free <= 0) abort();
-      if (name[i] == '\n' || name[i] == '\r' || name[i] == '\\') {
-        // character needs to be escaped
-        line[0] = '\\';
-        hash_start = line;
-        *name_ptr++ = '\\'; --name_free;
-        if (name_free <= 0) abort();
-        switch (name[i]) {
-          case '\n': *name_ptr++ = 'n';  --name_free; break;
-          case '\r': *name_ptr++ = 'r';  --name_free; break;
-          case '\\': *name_ptr++ = '\\'; --name_free; break;
-        }
-      } else {
-        *name_ptr++ = name[i];
-        --name_free;
-      }
+    if (escape_filename(name_ptr, name, name_free) == 1) {
+      *(--line_start) = '\\';
     }
   }
-  *name_ptr = '\0';
 
-  printf("%s\n", hash_start);
+  printf("%s\n", line_start);
 
   return 0;
 }
@@ -252,15 +269,22 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
     ssize_t r;
     while ((r = getline(&lineptr, &n, f)) >= 0) {
       ++lineno;
-      switch (sha256chk(lineptr, buf, opts)) {
+
+      int res = sha256chk(lineptr, buf, opts);
+      char _vname[PATH_MAX * 2 + 3];
+      char *vname = _vname + 1;
+      if (escape_filename(vname, lineptr, sizeof(_vname)-1) == 1) {
+        *(--vname) = '\\';
+      }
+      switch (res) {
         case CHECK_OKAY:
           if (!(opts->quiet || opts->status)) {
-            printf("%s: OK\n", lineptr);
+            printf("%s: OK\n", vname);
           }
           break;
         case CHECK_FAIL:
           if (!opts->status) {
-            printf("%s: FAILED\n", lineptr);
+            printf("%s: FAILED\n", vname);
           }
           ++failed_csum;
           break;
@@ -268,7 +292,7 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
           if (opts->warn) {
             fprintf(
               stderr, "%s: %s: %zu: improperly formatted SHA256"
-              " checksum line\n", opts->arg0, lineptr, lineno
+              " checksum line\n", opts->arg0, name, lineno
             );
           }
           break;
@@ -277,7 +301,7 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
         case CHECK_EFILE:
             /* I can't believe it's not Duff's device! */
             if (!opts->status) {
-              printf("%s: FAILED open or read\n", lineptr);
+              printf("%s: FAILED open or read\n", vname);
             }
             ++failed_read;
           }

@@ -2,6 +2,7 @@ bin/
 obj/
 gen/
 tmp/
+data/rfc6234.txt.xz
 
 # temp files
 *.swp

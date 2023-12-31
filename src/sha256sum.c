@@ -298,14 +298,13 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
           }
           break;
         case CHECK_ENOENT:
-          if (!opts->ignore_missing) { /* fallthrough */
+          if (opts->ignore_missing) break;
+          /* fallthrough */
         case CHECK_EFILE:
-            /* I can't believe it's not Duff's device! */
-            if (!opts->status) {
-              printf("%s: FAILED open or read\n", vname);
-            }
-            ++failed_read;
+          if (!opts->status) {
+            printf("%s: FAILED open or read\n", vname);
           }
+          ++failed_read;
           break;
       }
     }

@@ -34,6 +34,8 @@ typedef struct {
   unsigned check:1;
   unsigned quiet:1;
   unsigned status:1;
+  unsigned strict:1;
+  unsigned binary:1;
   unsigned ignore_missing:1;
 } sha256sum_opts_t;
 
@@ -41,16 +43,28 @@ static void print_try_help(sha256sum_opts_t *opts) {
   fprintf(stderr, "Try '%s --help' for more information.\n", opts->arg0);
 }
 
-static void print_not_verify(sha256sum_opts_t *opts, char *opt) {
-  fprintf(stderr, "%s: %s is meaningful only with -c/--check\n", opts->arg0, opt);
-}
-
 static void print_version() {
   printf("sha256sum (...) 0.0.1\n");
 }
 
 static void print_help(sha256sum_opts_t *opts) {
-  printf("TODO %s\n", opts->arg0);
+  printf(
+    "Usage: %s [OPTION]... [FILE]...\n"
+    "Print (default) or check SHA256 hashes\n\n"
+    "With no FILE, or when FILE is -, read standard input.\n\n"
+    "  -b, --binary         read in binary mode\n"
+    "  -t, --text           read in text mode (default)\n"
+    "  -c, --check          check hashes from FILE(s)\n\n"
+    "Options which affect checking:\n"
+    "      --ignore-missing don't fail for missing files\n"
+    "      --quiet          don't print OK for verified files\n"
+    "      --status         silent mode, indicate results only via exit code\n"
+    "      --strict         exit non-zero for malformed input lines\n"
+    "  -w, --warn           print warning for each malformed input line\n\n"
+    "      --help           show help and exit\n"
+    "      --version        show version and exit\n"
+    , opts->arg0
+  );
 }
 
 static const char hex_tab[] = {
@@ -87,7 +101,7 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
       f = stdin;
       name = "-";
     } else {
-      if ((f = fopen(name, "r")) == NULL) {
+      if ((f = fopen(name, opts->binary ? "rb" : "r")) == NULL) {
         ret = 1;
         break;
       }
@@ -178,6 +192,13 @@ static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
         break;
     }
   } while (name_dst[-1] != '\0');
+
+  if (hash_start[65] == '*') {
+    sha256sum_opts_t optb[] = {0};
+    memcpy(optb, opts, sizeof(*optb));
+    optb->binary = 1;
+    opts = optb;
+  }
 
   if (sha256file(line, buf, opts, hash) != 0) {
     return errno == ENOENT ? CHECK_ENOENT : CHECK_EFILE;
@@ -296,6 +317,7 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
               " checksum line\n", opts->arg0, name, lineno
             );
           }
+          ++failed_fmt;
           break;
         case CHECK_ENOENT:
           if (opts->ignore_missing) break;
@@ -316,6 +338,7 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
 
     fclose(f);
     errno = 0;
+
     if (!opts->status) {
       if (failed_fmt) {
         fprintf(
@@ -338,7 +361,8 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
         );
       }
     }
-    if (failed_read || failed_csum) ret |= 1;
+
+    if (failed_read || failed_csum || (failed_fmt && opts->strict)) ret |= 1;
   } else {
     ret = sha256sum(name, buf, opts);
   }
@@ -373,7 +397,7 @@ int main(int argc, char *argv[]) {
   for (int pass = 1; pass <= 2; ++pass) {
     int optend = 0, nfiles = 0;
     for (int n = 1; n < argc; ++n) {
-      int optchk = 0;
+      int optchk = 0, optgen = 0;
       char *arg = argv[n];
       if (optend) {
         ++nfiles;
@@ -393,6 +417,15 @@ int main(int argc, char *argv[]) {
           } else if (strcmp("status", arg + 2) == 0) {
             opts->status = 1;
             optchk = 1;
+          } else if (strcmp("strict", arg + 2) == 0) {
+            opts->strict = 1;
+            optchk = 1;
+          } else if (strcmp("text", arg + 2) == 0) {
+            opts->binary = 0;
+            optgen = 1;
+          } else if (strcmp("binary", arg + 2) == 0) {
+            opts->binary = 1;
+            optgen = 1;
           } else if (strcmp("quiet", arg + 2) == 0) {
             opts->quiet = 1;
             optchk = 1;
@@ -413,7 +446,7 @@ int main(int argc, char *argv[]) {
         } else {
           char flag; size_t i = 1;
           while ((flag = arg[i++]) != '\0') {
-            if (flag == 'c') {
+            if        (flag == 'c') {
               opts->check = 1;
             } else if (flag == 'w') {
               opts->warn = 1;
@@ -421,6 +454,12 @@ int main(int argc, char *argv[]) {
             } else if (flag == 's') {
               opts->status = 1;
               optchk = 1;
+            } else if (flag == 't') {
+              opts->binary = 0;
+              optgen = 1;
+            } else if (flag == 'b') {
+              opts->binary = 1;
+              optgen = 1;
             } else {
               fprintf(stderr, "%s: invalid option '%c'\n", argv[0], flag);
               print_try_help(opts);
@@ -429,8 +468,11 @@ int main(int argc, char *argv[]) {
           }
         }
 
-        if (pass == 2 && optchk && !opts->check) {
-          print_not_verify(opts, arg);
+        if (pass == 2 && (opts->check ? optgen : optchk)) {
+          fprintf(
+            stderr, "%s: %s %s with -c/--check\n", opts->arg0, arg,
+            opts->check ? "doesn't work" : "only works"
+          );
           return 1;
         }
 

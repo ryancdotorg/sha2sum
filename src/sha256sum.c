@@ -72,6 +72,15 @@ static const char hex_tab[] = {
   '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
 };
 
+#ifdef __OPTIMIZE_SIZE__
+#define SENSIBLE_HEX ( \
+  '1' == '0' + 1 && '2' == '0' + 2 && '3' == '0' + 3 && '4' == '0' + 4 && \
+  '5' == '0' + 5 && '6' == '0' + 6 && '7' == '0' + 7 && '8' == '0' + 8 && \
+  '9' == '0' + 9 && 'b' == 'a' + 1 && 'c' == 'a' + 2 && 'd' == 'a' + 3 && \
+  'e' == 'a' + 4 && 'f' == 'a' + 5 && 'B' == 'A' + 1 && 'C' == 'A' + 2 && \
+  'D' == 'A' + 3 && 'E' == 'A' + 4 && 'F' == 'A' + 5 \
+)
+#else
 static const uint16_t unhex_tab[] = {
   256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x0_
   256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0x1_
@@ -90,6 +99,7 @@ static const uint16_t unhex_tab[] = {
   256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256, // 0xe_
   256,256,256,256, 256,256,256,256, 256,256,256,256, 256,256,256,256  // 0xf_
 };
+#endif
 
 static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *opts, uint8_t hash[32]) {
   int ret = 0;
@@ -142,6 +152,49 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
 
 static int load_hash(uint8_t *hash, const char *s, size_t n) {
   const uint8_t *ptr = (uint8_t *)s;
+
+#ifdef __OPTIMIZE_SIZE__
+  n <<= 1;
+  uint8_t c = 0;
+  while (n--) {
+    if (SENSIBLE_HEX) {
+      char xdigit = *ptr++;
+      if (xdigit <= '9' && xdigit >= '0') {
+        xdigit = xdigit - '0';
+      } else if (xdigit >= 'a' && xdigit <= 'f') {
+        xdigit = (xdigit - 'a') + 0xA;
+      } else if (xdigit >= 'A' && xdigit <= 'F') {
+        xdigit = (xdigit - 'A') + 0xA;
+      }
+
+      c |= xdigit;
+    } else {
+      switch (*ptr++) {
+        case '0': c |=  0; break;   case '1': c |=  1; break;
+        case '2': c |=  2; break;   case '3': c |=  3; break;
+        case '4': c |=  4; break;   case '5': c |=  5; break;
+        case '6': c |=  6; break;   case '7': c |=  7; break;
+        case '8': c |=  8; break;   case '9': c |=  9; break;
+        case 'A': /* fallthrough */ case 'a': c |= 10; break;
+        case 'B': /* fallthrough */ case 'b': c |= 11; break;
+        case 'C': /* fallthrough */ case 'c': c |= 12; break;
+        case 'D': /* fallthrough */ case 'd': c |= 13; break;
+        case 'E': /* fallthrough */ case 'e': c |= 14; break;
+        case 'F': /* fallthrough */ case 'f': c |= 15; break;
+        default: return 1;
+      }
+    }
+
+    if ((n & 1) == 0) {
+      *hash++ = c;
+      c = 0;
+    } else {
+      c <<= 4;
+    }
+  }
+
+  return 0;
+#else
   uint16_t r = 0;
   while (n--) {
     r |= unhex_tab[ptr[0]] << 4;
@@ -152,6 +205,7 @@ static int load_hash(uint8_t *hash, const char *s, size_t n) {
   }
 
   return r;
+#endif
 }
 
 static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {

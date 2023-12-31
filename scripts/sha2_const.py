@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: CC0-1.0+ OR 0BSD OR OR MIT-0
+# Copyright (c) 2024, Ryan Castellucci, no rights reserved
 
 from sys import argv, exit, stdin, stdout, stderr, version_info
 from functools import partial
@@ -234,3 +236,4 @@ for last, i in islast(range(80)):
     if last or len(line) > 60:
         print(line)
         line = ''
+

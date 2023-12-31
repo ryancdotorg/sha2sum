@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: 0BSD OR OR MIT-0 OR Unlicense OR CC0-1.0+
+// SPDX-License-Identifier: CC0-1.0+ OR 0BSD OR OR MIT-0
 // Copyright (c) 2024, Ryan Castellucci, no rights reserved
-// SHA2-256 implemetations
 
 #include <stdint.h>
 #include <string.h>

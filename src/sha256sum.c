@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: CC0-1.0+ OR 0BSD OR OR MIT-0
+// Copyright (c) 2024, Ryan Castellucci, no rights reserved
+
 #define _GNU_SOURCE
 #include <stdint.h>
 #include <stdbool.h>

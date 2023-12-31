@@ -21,7 +21,7 @@
 /* must be a power of 2 */
 #define BUF_ALIGN 32
 /* must be a multiple of BUF_ALIGN */
-#define BUF_SZ 65536
+#define BUF_SZ 262144
 
 #define ALIGN(X, N) { \
   size_t _n = (N) - 1; \

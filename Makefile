@@ -16,9 +16,17 @@ COMPILE = $(CC) $(CPPFLAGS) $(CFLAGS)
 
 all: bin/sha256sum
 
+bin/test: obj/test.o
+	@mkdir -p $(@D)
+	$(COMPILE) $^ $(LDFLAGS) -o $@
+
 bin/sha256sum: obj/sha256.o obj/sha256sum.o
 	@mkdir -p $(@D)
-	$(COMPILE) $(LDFLAGS) $^ -o $@
+	$(COMPILE) $^ $(LDFLAGS) -o $@
+
+bin/sha256sum_ossl: obj/sha256sum.o
+	@mkdir -p $(@D)
+	$(COMPILE) $^ -lcrypto $(LDFLAGS) -o $@
 
 obj/sha256.o: src/sha256.c src/sha256.h gen/sha2_const.h
 	@mkdir -p $(@D)

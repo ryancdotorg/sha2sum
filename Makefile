@@ -40,7 +40,7 @@ obj/sha256sum_main.o: src/sha256sum.c
 
 obj/sha256sum_multicall.o: obj/sha256sum_main.o obj/sha256.o
 	@mkdir -p $(@D)
-	$(COMPILE) -r $^ $(LDFLAGS) -o $@
+	$(COMPILE) -r $^ -o $@
 
 gen/sha2_const.h: scripts/sha2_const.py
 	@mkdir -p $(@D)

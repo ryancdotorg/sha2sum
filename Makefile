@@ -10,7 +10,9 @@ LD ?= ld
 
 #override CPPFLAGS += ...
 CFLAGS ?= -O2
-override CFLAGS += -std=gnu17 -Wall -Wextra -pedantic
+override CFLAGS += -std=gnu17 -Wall -Wextra -pedantic \
+	-D_ALL_SOURCE -D_GNU_SOURCE \
+	-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 
 COMPILE = $(CC) $(CPPFLAGS) $(CFLAGS)
 
@@ -31,6 +33,14 @@ bin/sha256sum_ossl: obj/sha256sum.o
 obj/sha256.o: src/sha256.c src/sha256.h gen/sha2_const.h
 	@mkdir -p $(@D)
 	$(COMPILE) -c $< -o $@
+
+obj/sha256sum_main.o: src/sha256sum.c
+	@mkdir -p $(@D)
+	$(COMPILE) -DSHA256SUM_MAIN=sha256sum_main -c $< -o $@
+
+obj/sha256sum_multicall.o: obj/sha256sum_main.o obj/sha256.o
+	@mkdir -p $(@D)
+	$(COMPILE) -r $^ $(LDFLAGS) -o $@
 
 gen/sha2_const.h: scripts/sha2_const.py
 	@mkdir -p $(@D)

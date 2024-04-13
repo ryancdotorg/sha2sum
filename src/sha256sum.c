@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: CC0-1.0+ OR 0BSD OR OR MIT-0
 // Copyright (c) 2024, Ryan Castellucci, no rights reserved
 
-#define _GNU_SOURCE
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -427,7 +426,11 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
   return ret;
 }
 
-int main(int argc, char *argv[]) {
+#ifndef SHA256SUM_MAIN
+#define SHA256SUM_MAIN main
+#endif
+
+int SHA256SUM_MAIN(int argc, char *argv[]) {
   int ret = 0;
 
 #if BUF_SZ <= (1 << 18)

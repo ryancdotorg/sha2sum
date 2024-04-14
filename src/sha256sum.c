@@ -46,7 +46,7 @@ static void print_try_help(sha256sum_opts_t *opts) {
 }
 
 static void print_version() {
-  printf("sha256sum 0.0.1\n");
+  printf("sha256sum 0.0.5\n");
 }
 
 static void print_help(sha256sum_opts_t *opts) {

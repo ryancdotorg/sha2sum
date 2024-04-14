@@ -63,7 +63,7 @@ static void print_help(sha256sum_opts_t *opts) {
     "      --status         silent mode, indicate results only via exit code\n"
     "      --strict         exit non-zero for malformed input lines\n"
     "  -w, --warn           print warning for each malformed input line\n\n"
-    "      --help           show help and exit\n"
+    "  -h, --help           show help and exit\n"
     "      --version        show version and exit\n"
     , opts->arg0
   );
@@ -520,6 +520,9 @@ int SHA256SUM_MAIN(int argc, char *argv[]) {
             } else if (flag == 'b') {
               opts->binary = 1;
               optgen = 1;
+            } else if (flag == 'h') {
+              print_help(opts);
+              return 0;
             } else {
               fprintf(stderr, "%s: invalid option '%c'\n", argv[0], flag);
               print_try_help(opts);

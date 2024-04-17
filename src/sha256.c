@@ -11,7 +11,6 @@
 #define NOINLINE __attribute__ ((noinline))
 
 #define ROR32(x,n) __extension__({ uint32_t _x=(x), _n=(n); (_x >> _n) | (_x << (32-_n)); })
-#define ROR64(x,n) __extension__({ uint64_t _x=(x), _n=(n); (_x >> _n) | (_x << (64-_n)); })
 
 #define U32BE2H(V) __extension__({ \
   uint32_t _v = (V); \
@@ -79,13 +78,13 @@
   else if ((r%8) == 7) { P(r,B,C,D,E,F,G,H,A,K); } \
 } while(0)
 
-static const uint32_t IV[] = {
+static const uint32_t IV256[] = {
   SHA256_IV0, SHA256_IV1, SHA256_IV2, SHA256_IV3,
   SHA256_IV4, SHA256_IV5, SHA256_IV6, SHA256_IV7
 };
 
 #ifdef __OPTIMIZE_SIZE__
-static const uint32_t K[] = {    SHA256_K00,SHA256_K01,SHA256_K02,SHA256_K03,
+static const uint32_t K256[] = { SHA256_K00,SHA256_K01,SHA256_K02,SHA256_K03,
 SHA256_K04,SHA256_K05,SHA256_K06,SHA256_K07,SHA256_K08,SHA256_K09,SHA256_K10,
 SHA256_K11,SHA256_K12,SHA256_K13,SHA256_K14,SHA256_K15,SHA256_K16,SHA256_K17,
 SHA256_K18,SHA256_K19,SHA256_K20,SHA256_K21,SHA256_K22,SHA256_K23,SHA256_K24,
@@ -105,7 +104,7 @@ static void NOINLINE sha2_256_round(int r, uint32_t W[16], uint32_t x[8]) {
 #define f x[(13-r)&7]
 #define g x[(14-r)&7]
 #define h x[(15-r)&7]
-  uint32_t t = h + S1(e) + maj(e,f,g) + K[r] + W(r);
+  uint32_t t = h + S1(e) + maj(e,f,g) + K256[r] + W(r);
   d += t; h = t + S0(a) + ch(a,b,c);
 #undef a
 #undef b
@@ -118,6 +117,7 @@ static void NOINLINE sha2_256_round(int r, uint32_t W[16], uint32_t x[8]) {
 }
 
 // small implementation
+NOINLINE
 static void sha2_256_xform(uint32_t *digest, const uint8_t *data, uint32_t nblk) {
   const uint32_t *input=(uint32_t *)data;
 
@@ -178,23 +178,32 @@ static uint64_t sector_0xFF(const uint8_t *data) {
   DIGEST[4] += E; DIGEST[5] += F; DIGEST[6] += G; DIGEST[7] += H; \
 } while(0);
 
+NOINLINE
 static void sha2_256_0x00(uint32_t *digest, size_t nblk) {
   while (nblk--) {
     // entire input block is 0x00
-    uint32_t W[16] = { 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0};
+    uint32_t W[16] = {
+      0, 0, 0, 0,   0, 0, 0, 0,
+      0, 0, 0, 0,   0, 0, 0, 0
+    };
     SHA256_ROUNDS(digest);
   }
 }
 
+NOINLINE
 static void sha2_256_0xFF(uint32_t *digest, size_t nblk) {
   while (nblk--) {
     // entire input block is 0xFF
-    uint32_t W[16] = {~0,~0,~0,~0, ~0,~0,~0,~0, ~0,~0,~0,~0, ~0,~0,~0,~0};
+    uint32_t W[16] = {
+      ~0,~0,~0,~0,  ~0,~0,~0,~0,
+      ~0,~0,~0,~0,  ~0,~0,~0,~0
+    };
     SHA256_ROUNDS(digest);
   }
 }
 
 // fast implementation
+NOINLINE
 static void sha2_256_xform(uint32_t *digest, const uint8_t *data, uint32_t nblk) {
   const uint32_t *input=(uint32_t *)data;
 
@@ -212,7 +221,7 @@ int SHA256_Init(SHA256_CTX *ctx) {
   ctx->bytelen = 0;
   ctx->datalen = 0;
   ctx->openssl = 0;
-  for (int i = 0; i < 8; ++i) ctx->state[i] = IV[i];
+  for (int i = 0; i < 8; ++i) ctx->state[i] = IV256[i];
 
   return 1;
 }
@@ -331,13 +340,31 @@ int SHA256_Final(uint8_t hash[], SHA256_CTX *ctx) {
   return 1;
 }
 
-static unsigned char md[32];
+#ifdef TEST
+static unsigned char sha256_md[32];
 
 unsigned char *SHA256(const uint8_t data[], size_t len, uint8_t hash[]) {
-  uint8_t *out = hash != NULL ? hash : md;
+  uint8_t *out = hash != NULL ? hash : sha256_md;
   SHA256_CTX ctx[] = {0};
   SHA256_Init(ctx);
   SHA256_Update(ctx, data, len);
-  SHA256_Final(hash, ctx);
+  SHA256_Final(out, ctx);
   return out;
 }
+
+int main(int argc, char *argv[]) {
+  char buf[65];
+  for (int i = 1; i < argc; ++i) {
+    char *data = argv[i];
+    uint8_t *hash = SHA256((uint8_t*)data, strlen(data), NULL);
+    char *p = buf;
+    for (int j = 0; j < 32; ++j) {
+      sprintf(p, "%02x", hash[j]);
+      p += 2;
+    }
+    printf("%s\n", buf);
+  }
+
+  return 0;
+}
+#endif

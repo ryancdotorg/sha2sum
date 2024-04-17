@@ -13,6 +13,9 @@
 #include <linux/limits.h>
 
 #include "sha256.h"
+#ifdef WITH_SHA512
+#include "sha512.h"
+#endif
 
 #define CHECK_EFMT  -1
 #define CHECK_OKAY   0
@@ -39,6 +42,9 @@ typedef struct {
   unsigned strict:1;
   unsigned binary:1;
   unsigned ignore_missing:1;
+#ifdef WITH_SHA512
+  int hash_sz;
+#endif
 } sha256sum_opts_t;
 
 static void print_try_help(sha256sum_opts_t *opts) {
@@ -103,7 +109,10 @@ static const uint16_t unhex_tab[] = {
 };
 #endif
 
-static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *opts, uint8_t hash[32]) {
+static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *opts, uint8_t hash[]) {
+#ifdef WITH_SHA512
+  int sz = opts->hash_sz;
+#endif
   int ret = 0;
   errno = 0;
   FILE *f;
@@ -119,15 +128,34 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
       }
     }
 
+#ifdef WITH_SHA512
+    SHA512_CTX ctx[] = {0};
+    if (sz == 64) {
+      SHA512_Init(ctx);
+    } else if (sz == 48) {
+      SHA384_Init(ctx);
+    } else {
+      SHA256_Init((SHA256_CTX*)ctx);
+    }
+#else
     SHA256_CTX ctx[] = {0};
-
     SHA256_Init(ctx);
+#endif
+
 
     size_t n;
     do {
       // fread yields fewer bytes than requested only at eof or on error
       if ((n = fread(buf, 1, BUF_SZ, f)) > 0) {
+#ifdef WITH_SHA512
+        if (sz == 32) {
+          SHA256_Update((SHA256_CTX*)ctx, buf, n);
+        } else {
+          SHA512_Update(ctx, buf, n);
+        }
+#else
         SHA256_Update(ctx, buf, n);
+#endif
       }
     } while (n == BUF_SZ);
 
@@ -136,7 +164,15 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
       break;
     }
 
+#ifdef WITH_SHA512
+    if (sz == 32) {
+      SHA256_Final(hash, (SHA256_CTX*)ctx);
+    } else {
+      SHA512_Final(hash, ctx);
+    }
+#else
     SHA256_Final(hash, ctx);
+#endif
   } while (0);
 
   if (errno && !(opts->ignore_missing && errno == ENOENT)) {
@@ -211,18 +247,24 @@ static int load_hash(uint8_t *hash, const char *s, size_t n) {
 }
 
 static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
+#ifdef WITH_SHA512
+  int sz = opts->hash_sz;
+  uint8_t ref[64], hash[64];
+#else
+  int sz = 32;
   uint8_t ref[32], hash[32];
+#endif
   int escaped = (line[0] == '\\' ? 1 : 0);
   char *hash_start = line + escaped;
-  char *name_start = hash_start + 64 + 2;
+  char *name_start = hash_start + sz * 2 + 2;
 
-  if (load_hash(ref, hash_start, 32) != 0) return CHECK_EFMT;
+  if (load_hash(ref, hash_start, sz) != 0) return CHECK_EFMT;
 
   // make sure there's whitespace where expected
-  if (!(hash_start[64] == ' ' || hash_start[64] == '\t')) return CHECK_EFMT;
+  if (!(hash_start[sz * 2] == ' ' || hash_start[sz * 2] == '\t')) return CHECK_EFMT;
 
   // check the mode character and adjust the name start if needed
-  if (!(hash_start[65] == ' ' || hash_start[65] == '*')) --name_start;
+  if (!(hash_start[sz * 2 + 1] == ' ' || hash_start[sz * 2 + 1] == '*')) --name_start;
 
   char *name_src = name_start;
   char *name_dst = line;
@@ -249,7 +291,7 @@ static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
     }
   } while (name_dst[-1] != '\0');
 
-  if (hash_start[65] == '*') {
+  if (hash_start[sz * 2 + 1] == '*') {
     sha256sum_opts_t optb[] = {0};
     memcpy(optb, opts, sizeof(*optb));
     optb->binary = 1;
@@ -261,7 +303,7 @@ static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
   }
 
   uint8_t mismatch = 0;
-  for (int i = 0; i < 32; ++i) {
+  for (int i = 0; i < sz; ++i) {
     mismatch |= ref[i] ^ hash[i];
   }
 
@@ -294,18 +336,24 @@ static int escape_filename(char *esc, const char *src, size_t n) {
 }
 
 static int sha256sum(const char *name, unsigned char *buf, sha256sum_opts_t *opts) {
+#ifdef WITH_SHA512
+  int sz = opts->hash_sz;
+  uint8_t hash[64];
+#else
+  int sz = 32;
   uint8_t hash[32];
+#endif
   // escape flag, sha256 hash in hex, two spaces,
   // escaped filename, newline, null terminator
-  char line[1 + 64 + 2 + PATH_MAX * 2 + 2];
+  char line[1 + sz * 2 + 2 + PATH_MAX * 2 + 2];
   char *line_start = line + 1;
   char *hash_ptr = line_start;
-  char *name_ptr = hash_ptr + 64 + 2;
+  char *name_ptr = hash_ptr + sz * 2 + 2;
   size_t name_free = PATH_MAX * 2 + 2;
 
   if (sha256file(name, buf, opts, hash) != 0) return 1;
 
-  for (size_t i = 0; i < sizeof(hash); ++i) {
+  for (int i = 0; i < sz; ++i) {
     *hash_ptr++ = hex_tab[hash[i] >> 4];
     *hash_ptr++ = hex_tab[hash[i] & 15];
   }
@@ -451,6 +499,19 @@ int SHA256SUM_MAIN(int argc, char *argv[]) {
   sha256sum_opts_t opts[] = {0};
   memset(opts, 0, sizeof(sha256sum_opts_t));
   opts->arg0 = argv[0];
+
+#ifdef WITH_SHA512
+  char *prog = basename(opts->arg0);
+
+  if (strcmp(prog, "sha512sum") == 0) {
+    opts->hash_sz = 64;
+  } else if (strcmp(prog, "sha384sum") == 0) {
+    opts->hash_sz = 48;
+  } else {
+    opts->hash_sz = 32;
+  }
+#endif
+
 
   // pass over the argument list twice to avoid allocating memory
   // assumes the arguments don't change between passes

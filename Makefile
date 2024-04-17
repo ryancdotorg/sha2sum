@@ -22,17 +22,25 @@ bin/test: obj/test.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ $(LDFLAGS) -o $@
 
+bin/test_%: src/%.c gen/sha2_const.h
+	@mkdir -p $(@D)
+	$(COMPILE) -DTEST $< $(LDFLAGS) -o $@
+
 bin/sha256sum: obj/sha256.o obj/sha256sum.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ $(LDFLAGS) -o $@
 
+bin/sha512sum: obj/sha256.o obj/sha512.o obj/sha512sum.o
+	@mkdir -p $(@D)
+	$(COMPILE) $^ $(LDFLAGS) -o $@
+
+bin/sha384sum: bin/sha512sum
+	@mkdir -p $(@D)
+	ln -s sha512sum $@
+
 bin/sha256sum_ossl: obj/sha256sum.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ -lcrypto $(LDFLAGS) -o $@
-
-obj/sha256.o: src/sha256.c src/sha256.h gen/sha2_const.h
-	@mkdir -p $(@D)
-	$(COMPILE) -c $< -o $@
 
 obj/sha256sum_main.o: src/sha256sum.c
 	@mkdir -p $(@D)
@@ -42,9 +50,25 @@ obj/sha256sum_multicall.o: obj/sha256sum_main.o obj/sha256.o
 	@mkdir -p $(@D)
 	$(COMPILE) --entry sha256sum_main -r $^ -o $@
 
+obj/sha512sum_main.o: src/sha256sum.c
+	@mkdir -p $(@D)
+	$(COMPILE) -DWITH_SHA512 -DSHA256SUM_MAIN=sha512sum_main -c $< -o $@
+
+obj/sha512sum_multicall.o: obj/sha512sum_main.o obj/sha256.o obj/sha512.o
+	@mkdir -p $(@D)
+	$(COMPILE) --entry sha512sum_main -r $^ -o $@
+
+obj/sha512sum.o: src/sha256sum.c
+	@mkdir -p $(@D)
+	$(COMPILE) -DWITH_SHA512 -c $^ $(LDFLAGS) -o $@
+
 gen/sha2_const.h: scripts/sha2_const.py
 	@mkdir -p $(@D)
 	python3 $< > $@
+
+obj/sha%.o: src/sha%.c src/sha%.h gen/sha2_const.h
+	@mkdir -p $(@D)
+	$(COMPILE) -c $< -o $@
 
 # generic build rules
 obj/%.o: src/%.c src/%.h

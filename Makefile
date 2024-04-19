@@ -98,7 +98,7 @@ gen/sha2_const.h: scripts/sha2_const.py
 	@mkdir -p $(@D)
 	python3 $< > $@
 
-obj/sha%.o: src/sha%.c src/sha%.h gen/sha2_const.h
+obj/sha%.o: src/sha%.c src/sha%.h src/sha2.h gen/sha2_const.h
 	@mkdir -p $(@D)
 	$(COMPILE) -c $< -o $@
 

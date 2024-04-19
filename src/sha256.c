@@ -5,78 +5,15 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "sha2.h"
 #include "sha256.h"
 #include "../gen/sha2_const.h"
-
-#define NOINLINE __attribute__ ((noinline))
-
-#define ROR32(x,n) __extension__({ uint32_t _x=(x), _n=(n); (_x >> _n) | (_x << (32-_n)); })
-
-#define U32BE2H(V) __extension__({ \
-  uint32_t _v = (V); \
-  uint8_t *_t = (uint8_t*)&_v; \
-  uint32_t _r = 0; \
-  _r |= ((uint32_t)_t[0]) << 24; \
-  _r |= ((uint32_t)_t[1]) << 16; \
-  _r |= ((uint32_t)_t[2]) <<  8; \
-  _r |= ((uint32_t)_t[3]) <<  0; \
-  _r; \
-})
-
-#define U32H2BE(V) __extension__({ \
-  uint32_t _v = (V); \
-  uint8_t _t[4]; \
-  _t[0] = (_v & UINT32_C(0xFF000000)) >> 24; \
-  _t[1] = (_v & UINT32_C(0x00FF0000)) >> 16; \
-  _t[2] = (_v & UINT32_C(0x0000FF00)) >>  8; \
-  _t[3] = (_v & UINT32_C(0x000000FF)) >>  0; \
-  *((uint32_t*)_t); \
-})
-
-#define U64H2BE(V) __extension__({ \
-  uint64_t _v = (V); \
-  uint8_t _t[8]; \
-  _t[0] = (_v & UINT64_C(0xFF00000000000000)) >> 56; \
-  _t[1] = (_v & UINT64_C(0x00FF000000000000)) >> 48; \
-  _t[2] = (_v & UINT64_C(0x0000FF0000000000)) >> 40; \
-  _t[3] = (_v & UINT64_C(0x000000FF00000000)) >> 32; \
-  _t[4] = (_v & UINT64_C(0x00000000FF000000)) >> 24; \
-  _t[5] = (_v & UINT64_C(0x0000000000FF0000)) >> 16; \
-  _t[6] = (_v & UINT64_C(0x000000000000FF00)) >>  8; \
-  _t[7] = (_v & UINT64_C(0x00000000000000FF)) >>  0; \
-  *((uint64_t*)_t); \
-})
-
-#define STOR32BE(D, V) (*((uint32_t*)(D)) = U32H2BE((V)))
-#define STOR64BE(D, V) (*((uint64_t*)(D)) = U64H2BE((V)))
 
 #define s0(x) (ROR32(x,  7) ^ ROR32(x, 18) ^ (x >>  3))
 #define s1(x) (ROR32(x, 17) ^ ROR32(x, 19) ^ (x >> 10))
 
 #define S0(x) (ROR32(x,  2) ^ ROR32(x, 13) ^ ROR32(x, 22))
 #define S1(x) (ROR32(x,  6) ^ ROR32(x, 11) ^ ROR32(x, 25))
-
-#define ch(x,y,z) ((x & y) | (z & (x | y)))
-#define maj(x,y,z) (z ^ (x & (y ^ z)))
-
-#define W(r) \
-(r<16?W[r]:(W[r&15]=s1(W[(r+14)&15])+W[(r+9)&15]+s0(W[(r+1)&15])+W[r&15]))
-
-#define P(r,a,b,c,d,e,f,g,h,K) {            \
-  temp = h + S1(e) + maj(e,f,g) + K + W(r); \
-  d += temp; h = temp + S0(a) + ch(a,b,c);  \
-}
-
-#define R(r,K) do {                                \
-  if      ((r%8) == 0) { P(r,A,B,C,D,E,F,G,H,K); } \
-  else if ((r%8) == 1) { P(r,H,A,B,C,D,E,F,G,K); } \
-  else if ((r%8) == 2) { P(r,G,H,A,B,C,D,E,F,K); } \
-  else if ((r%8) == 3) { P(r,F,G,H,A,B,C,D,E,K); } \
-  else if ((r%8) == 4) { P(r,E,F,G,H,A,B,C,D,K); } \
-  else if ((r%8) == 5) { P(r,D,E,F,G,H,A,B,C,K); } \
-  else if ((r%8) == 6) { P(r,C,D,E,F,G,H,A,B,K); } \
-  else if ((r%8) == 7) { P(r,B,C,D,E,F,G,H,A,K); } \
-} while(0)
 
 static const uint32_t IV256[] = {
   SHA256_IV0, SHA256_IV1, SHA256_IV2, SHA256_IV3,
@@ -134,8 +71,6 @@ static void sha2_256_xform(uint32_t *digest, const uint8_t *data, uint32_t nblk)
   }
 }
 #else
-
-#define SECTOR_SZ 512
 
 static uint64_t sector_0x00(const uint8_t *data) {
   const uint64_t *block = (uint64_t *)__builtin_assume_aligned(data, 32);

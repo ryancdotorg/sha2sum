@@ -5,43 +5,9 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "sha2.h"
 #include "sha512.h"
 #include "../gen/sha2_const.h"
-
-#define NOINLINE __attribute__ ((noinline))
-
-#define ROR64(x,n) __extension__({ uint64_t _x=(x), _n=(n); (_x >> _n) | (_x << (64-_n)); })
-
-#define U64BE2H(V) __extension__({ \
-  uint64_t _v = (V); \
-  uint8_t *_t = (uint8_t*)&_v; \
-  uint64_t _r = 0; \
-  _r |= ((uint64_t)_t[0]) << 56; \
-  _r |= ((uint64_t)_t[1]) << 48; \
-  _r |= ((uint64_t)_t[2]) << 40; \
-  _r |= ((uint64_t)_t[3]) << 32; \
-  _r |= ((uint64_t)_t[4]) << 24; \
-  _r |= ((uint64_t)_t[5]) << 16; \
-  _r |= ((uint64_t)_t[6]) <<  8; \
-  _r |= ((uint64_t)_t[7]) <<  0; \
-  _r; \
-})
-
-#define U64H2BE(V) __extension__({ \
-  uint64_t _v = (V); \
-  uint8_t _t[8]; \
-  _t[0] = (_v & UINT64_C(0xFF00000000000000)) >> 56; \
-  _t[1] = (_v & UINT64_C(0x00FF000000000000)) >> 48; \
-  _t[2] = (_v & UINT64_C(0x0000FF0000000000)) >> 40; \
-  _t[3] = (_v & UINT64_C(0x000000FF00000000)) >> 32; \
-  _t[4] = (_v & UINT64_C(0x00000000FF000000)) >> 24; \
-  _t[5] = (_v & UINT64_C(0x0000000000FF0000)) >> 16; \
-  _t[6] = (_v & UINT64_C(0x000000000000FF00)) >>  8; \
-  _t[7] = (_v & UINT64_C(0x00000000000000FF)) >>  0; \
-  *((uint64_t*)_t); \
-})
-
-#define STOR64BE(D, V) (*((uint64_t*)(D)) = U64H2BE((V)))
 
 #define s0(x) (ROR64(x,  1) ^ ROR64(x,  8) ^ (x >>   7))   // s0
 #define s1(x) (ROR64(x, 19) ^ ROR64(x, 61) ^ (x >>   6))   // s1
@@ -49,27 +15,6 @@
 #define S0(x) (ROR64(x, 28) ^ ROR64(x, 34) ^ ROR64(x, 39)) // S0
 #define S1(x) (ROR64(x, 14) ^ ROR64(x, 18) ^ ROR64(x, 41)) // S1
 
-#define ch(x,y,z) ((x & y) | (z & (x | y)))
-#define maj(x,y,z) (z ^ (x & (y ^ z)))
-
-#define W(r) \
-(r<16?W[r]:(W[r&15]=s1(W[(r+14)&15])+W[(r+9)&15]+s0(W[(r+1)&15])+W[r&15]))
-
-#define P(r,a,b,c,d,e,f,g,h,K) {            \
-  temp = h + S1(e) + maj(e,f,g) + K + W(r); \
-  d += temp; h = temp + S0(a) + ch(a,b,c);  \
-}
-
-#define R(r,K) do {                                \
-  if      ((r%8) == 0) { P(r,A,B,C,D,E,F,G,H,K); } \
-  else if ((r%8) == 1) { P(r,H,A,B,C,D,E,F,G,K); } \
-  else if ((r%8) == 2) { P(r,G,H,A,B,C,D,E,F,K); } \
-  else if ((r%8) == 3) { P(r,F,G,H,A,B,C,D,E,K); } \
-  else if ((r%8) == 4) { P(r,E,F,G,H,A,B,C,D,K); } \
-  else if ((r%8) == 5) { P(r,D,E,F,G,H,A,B,C,K); } \
-  else if ((r%8) == 6) { P(r,C,D,E,F,G,H,A,B,K); } \
-  else if ((r%8) == 7) { P(r,B,C,D,E,F,G,H,A,K); } \
-} while(0)
 
 static const uint64_t IV512[] = {
   SHA512_IV0, SHA512_IV1, SHA512_IV2, SHA512_IV3,
@@ -123,30 +68,6 @@ static void sha2_512_xform(uint64_t *digest, const uint8_t *data, uint32_t nblk)
 
   for (const uint64_t *end = input + nblk * 16; input < end; input += 16) {
     uint64_t W[16], x[8];
-#if 0
-    uint8_t *p = (void*)input;
-    for (int i = 0; i < 128; ++i) {
-      if (i == 0) {
-        printf(">> ");
-      } else if (i % 64 == 0) {
-        printf(".. ");
-      }
-
-      if (*p == 0) {
-        printf("\033[90m%02x\033[0m", *p);
-      } else {
-        printf("%02x", *p);
-      }
-
-      if (i % 64 == 63) {
-        printf("\n");
-      } else if (i % 16 == 15) {
-        printf(" ");
-      }
-
-      ++p;
-    }
-#endif
     // load input
     for (int i = 0; i < 16; ++i) W[i] = U64BE2H(input[i]);
     // load digest state
@@ -158,8 +79,6 @@ static void sha2_512_xform(uint64_t *digest, const uint8_t *data, uint32_t nblk)
   }
 }
 #else
-
-#define SECTOR_SZ 512
 
 static uint64_t sector_0x00(const uint8_t *data) {
   const uint64_t *block = (uint64_t *)__builtin_assume_aligned(data, 32);

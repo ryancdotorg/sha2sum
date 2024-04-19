@@ -76,19 +76,11 @@ obj/sha2sum_multicall.o: obj/sha2sum_main.o obj/sha256.o obj/sha512.o
 
 
 
-bin/sha384sum: bin/sha2sum
+bin/sha%sum: bin/sha2sum
 	@mkdir -p $(@D)
 	ln -s sha2sum $@
 
-bin/sha384sum_ossl: bin/sha2sum_ossl
-	@mkdir -p $(@D)
-	ln -s sha2sum_ossl $@
-
-bin/sha512sum: bin/sha2sum
-	@mkdir -p $(@D)
-	ln -s sha2sum $@
-
-bin/sha512sum_ossl: bin/sha2sum_ossl
+bin/sha%sum_ossl: bin/sha2sum_ossl
 	@mkdir -p $(@D)
 	ln -s sha2sum_ossl $@
 

@@ -22,4 +22,3 @@ int SHA384_Init(SHA512_CTX *);
 int SHA512_Init(SHA512_CTX *);
 int SHA512_Update(SHA512_CTX *, const uint8_t[], size_t);
 int SHA512_Final(uint8_t[], SHA512_CTX *);
-unsigned char *SHA512(const uint8_t[], size_t, uint8_t[]);

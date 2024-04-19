@@ -12,6 +12,8 @@
 
 #include <linux/limits.h>
 
+#include "debugp.h"
+
 #include "sha256.h"
 #ifdef WITH_SHA512
 #include "sha512.h"
@@ -45,33 +47,45 @@ typedef struct {
 #ifdef WITH_SHA512
   int hash_sz;
 #endif
-} sha256sum_opts_t;
+} sha2sum_opts_t;
 
-static void print_try_help(sha256sum_opts_t *opts) {
+static void print_try_help(sha2sum_opts_t *opts) {
   fprintf(stderr, "Try '%s --help' for more information.\n", opts->arg0);
 }
 
 static void print_version() {
-  printf("sha256sum 0.0.5\n");
+  printf("sha2sum v0.1.0\n");
 }
 
-static void print_help(sha256sum_opts_t *opts) {
+static void print_help(sha2sum_opts_t *opts) {
   printf(
     "Usage: %s [OPTION]... [FILE]...\n"
-    "Print (default) or check SHA256 hashes\n\n"
-    "With no FILE, or when FILE is -, read standard input.\n\n"
+    "Print (default) or check SHA%d hashes\n"
+    "\n"
+    "With no FILE, or when FILE is -, read standard input.\n"
+    "\n"
+    "%s"
     "  -b, --binary         read in binary mode\n"
     "  -t, --text           read in text mode (default)\n"
-    "  -c, --check          check hashes from FILE(s)\n\n"
+    "  -c, --check          check hashes from FILE(s)\n"
+    "\n"
     "Options which affect checking:\n"
     "      --ignore-missing don't fail for missing files\n"
     "      --quiet          don't print OK for verified files\n"
     "      --status         silent mode, indicate results only via exit code\n"
     "      --strict         exit non-zero for malformed input lines\n"
-    "  -w, --warn           print warning for each malformed input line\n\n"
+    "  -w, --warn           print warning for each malformed input line\n"
+    "\n"
     "  -h, --help           show help and exit\n"
     "      --version        show version and exit\n"
     , opts->arg0
+#ifdef WITH_SHA512
+    , opts->hash_sz ? opts->hash_sz * 8 : 2
+    , opts->hash_sz ? "" : "  -a, --algorithm=TYPE SHA2 variant to use (sha256, sha384, or sha512)\n"
+#else
+    , 256
+    , ""
+#endif
   );
 }
 
@@ -109,7 +123,20 @@ static const uint16_t unhex_tab[] = {
 };
 #endif
 
-static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *opts, uint8_t hash[]) {
+#ifdef WITH_SHA512
+#define SHA_Do(FN, ...) \
+do { \
+  if (sz == 32) { \
+    SHA256_ ## FN(__VA_ARGS__); \
+  } else { \
+    SHA512_ ## FN(__VA_ARGS__); \
+  } \
+} while (0)
+#else
+#define SHA_Do(FN, ...) SHA256_ ## FN(__VA_ARGS__)
+#endif
+
+static int sha2file(const char *name, unsigned char *buf, sha2sum_opts_t *opts, uint8_t hash[]) {
 #ifdef WITH_SHA512
   int sz = opts->hash_sz;
 #endif
@@ -129,16 +156,19 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
     }
 
 #ifdef WITH_SHA512
-    SHA512_CTX ctx[] = {0};
+    SHA512_CTX _ctx[] = {0};
+    void *ctx = _ctx;
+
     if (sz == 64) {
       SHA512_Init(ctx);
     } else if (sz == 48) {
       SHA384_Init(ctx);
     } else {
-      SHA256_Init((SHA256_CTX*)ctx);
+      SHA256_Init(ctx);
     }
 #else
     SHA256_CTX ctx[] = {0};
+
     SHA256_Init(ctx);
 #endif
 
@@ -147,15 +177,7 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
     do {
       // fread yields fewer bytes than requested only at eof or on error
       if ((n = fread(buf, 1, BUF_SZ, f)) > 0) {
-#ifdef WITH_SHA512
-        if (sz == 32) {
-          SHA256_Update((SHA256_CTX*)ctx, buf, n);
-        } else {
-          SHA512_Update(ctx, buf, n);
-        }
-#else
-        SHA256_Update(ctx, buf, n);
-#endif
+        SHA_Do(Update, ctx, buf, n);
       }
     } while (n == BUF_SZ);
 
@@ -164,15 +186,7 @@ static int sha256file(const char *name, unsigned char *buf, sha256sum_opts_t *op
       break;
     }
 
-#ifdef WITH_SHA512
-    if (sz == 32) {
-      SHA256_Final(hash, (SHA256_CTX*)ctx);
-    } else {
-      SHA512_Final(hash, ctx);
-    }
-#else
-    SHA256_Final(hash, ctx);
-#endif
+    SHA_Do(Final, hash, ctx);
   } while (0);
 
   if (errno && !(opts->ignore_missing && errno == ENOENT)) {
@@ -203,6 +217,8 @@ static int load_hash(uint8_t *hash, const char *s, size_t n) {
         xdigit = (xdigit - 'a') + 0xA;
       } else if (xdigit >= 'A' && xdigit <= 'F') {
         xdigit = (xdigit - 'A') + 0xA;
+      } else {
+        return 1;
       }
 
       c |= xdigit;
@@ -246,22 +262,39 @@ static int load_hash(uint8_t *hash, const char *s, size_t n) {
 #endif
 }
 
-static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
+static int sha2chk(char *line, unsigned char *buf, sha2sum_opts_t *opts) {
+  int escaped = (line[0] == '\\' ? 1 : 0);
+  char *name_start, *hash_start = line + escaped;
 #ifdef WITH_SHA512
-  int sz = opts->hash_sz;
+  int sz = opts->hash_sz ? opts->hash_sz : 32;
   uint8_t ref[64], hash[64];
+  sha2sum_opts_t optb[] = {0};
+  memcpy(optb, opts, sizeof(*optb));
+  opts = optb;
+hash_size_search:
 #else
   int sz = 32;
   uint8_t ref[32], hash[32];
 #endif
-  int escaped = (line[0] == '\\' ? 1 : 0);
-  char *hash_start = line + escaped;
-  char *name_start = hash_start + sz * 2 + 2;
+  name_start = hash_start + sz * 2 + 2;
+
+  // make sure there's whitespace where expected
+  if (!(hash_start[sz * 2] == ' ' || hash_start[sz * 2] == '\t')) {
+#ifdef WITH_SHA512
+    if (!opts->hash_sz && sz < 64) {
+      sz += 16;
+      goto hash_size_search;
+    }
+#endif
+    return CHECK_EFMT;
+#ifdef WITH_SHA512
+  } else {
+    opts->hash_sz = sz;
+#endif
+  }
 
   if (load_hash(ref, hash_start, sz) != 0) return CHECK_EFMT;
 
-  // make sure there's whitespace where expected
-  if (!(hash_start[sz * 2] == ' ' || hash_start[sz * 2] == '\t')) return CHECK_EFMT;
 
   // check the mode character and adjust the name start if needed
   if (!(hash_start[sz * 2 + 1] == ' ' || hash_start[sz * 2 + 1] == '*')) --name_start;
@@ -292,13 +325,15 @@ static int sha256chk(char *line, unsigned char *buf, sha256sum_opts_t *opts) {
   } while (name_dst[-1] != '\0');
 
   if (hash_start[sz * 2 + 1] == '*') {
-    sha256sum_opts_t optb[] = {0};
+#ifndef WITH_SHA512
+    sha2sum_opts_t optb[] = {0};
     memcpy(optb, opts, sizeof(*optb));
-    optb->binary = 1;
     opts = optb;
+#endif
+    opts->binary = 1;
   }
 
-  if (sha256file(line, buf, opts, hash) != 0) {
+  if (sha2file(line, buf, opts, hash) != 0) {
     return errno == ENOENT ? CHECK_ENOENT : CHECK_EFILE;
   }
 
@@ -335,7 +370,7 @@ static int escape_filename(char *esc, const char *src, size_t n) {
   return ret;
 }
 
-static int sha256sum(const char *name, unsigned char *buf, sha256sum_opts_t *opts) {
+static int sha2sum(const char *name, unsigned char *buf, sha2sum_opts_t *opts) {
 #ifdef WITH_SHA512
   int sz = opts->hash_sz;
   uint8_t hash[64];
@@ -343,7 +378,7 @@ static int sha256sum(const char *name, unsigned char *buf, sha256sum_opts_t *opt
   int sz = 32;
   uint8_t hash[32];
 #endif
-  // escape flag, sha256 hash in hex, two spaces,
+  // escape flag, sha2 hash in hex, two spaces,
   // escaped filename, newline, null terminator
   char line[1 + sz * 2 + 2 + PATH_MAX * 2 + 2];
   char *line_start = line + 1;
@@ -351,7 +386,7 @@ static int sha256sum(const char *name, unsigned char *buf, sha256sum_opts_t *opt
   char *name_ptr = hash_ptr + sz * 2 + 2;
   size_t name_free = PATH_MAX * 2 + 2;
 
-  if (sha256file(name, buf, opts, hash) != 0) return 1;
+  if (sha2file(name, buf, opts, hash) != 0) return 1;
 
   for (int i = 0; i < sz; ++i) {
     *hash_ptr++ = hex_tab[hash[i] >> 4];
@@ -374,7 +409,7 @@ static int sha256sum(const char *name, unsigned char *buf, sha256sum_opts_t *opt
   return 0;
 }
 
-static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts) {
+static int handler(const char *name, unsigned char *buf, sha2sum_opts_t *opts) {
   int ret = 0;
   if (opts->check) {
     FILE *f;
@@ -396,7 +431,7 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
     while ((r = getline(&lineptr, &n, f)) >= 0) {
       ++lineno;
 
-      int res = sha256chk(lineptr, buf, opts);
+      int res = sha2chk(lineptr, buf, opts);
       char _vname[PATH_MAX * 2 + 3];
       char *vname = _vname + 1;
       if (escape_filename(vname, lineptr, sizeof(_vname)-1) == 1) {
@@ -468,7 +503,7 @@ static int handler(const char *name, unsigned char *buf, sha256sum_opts_t *opts)
 
     if (failed_read || failed_csum || (failed_fmt && opts->strict)) ret |= 1;
   } else {
-    ret = sha256sum(name, buf, opts);
+    ret = sha2sum(name, buf, opts);
   }
 
   return ret;
@@ -496,22 +531,18 @@ int SHA256SUM_MAIN(int argc, char *argv[]) {
 
   ALIGN(buf, BUF_ALIGN);
 
-  sha256sum_opts_t opts[] = {0};
-  memset(opts, 0, sizeof(sha256sum_opts_t));
-  opts->arg0 = argv[0];
+  sha2sum_opts_t opts[] = {{ .arg0 = argv[0] }};
 
 #ifdef WITH_SHA512
-  char *prog = basename(opts->arg0);
-
-  if (strcmp(prog, "sha512sum") == 0) {
+  char *aopt = NULL, *prog = basename(opts->arg0);
+  if (strncmp("sha512sum", prog, 9) == 0) {
     opts->hash_sz = 64;
-  } else if (strcmp(prog, "sha384sum") == 0) {
+  } else if (strncmp("sha384sum", prog, 9) == 0) {
     opts->hash_sz = 48;
-  } else {
+  } else if (strncmp("sha256sum", prog, 9) == 0) {
     opts->hash_sz = 32;
   }
 #endif
-
 
   // pass over the argument list twice to avoid allocating memory
   // assumes the arguments don't change between passes
@@ -530,6 +561,16 @@ int SHA256SUM_MAIN(int argc, char *argv[]) {
           if (arg[2] == '\0') {
             optend = 1;
             break;
+#ifdef WITH_SHA512
+          } else if ((opts->hash_sz == 0 || NULL != aopt) && strncmp("algorithm", arg + 2, 9) == 0) {
+            if (arg[11] == '=') {
+              aopt = arg + 12;
+            } else if (arg[11] == '\0') {
+              aopt = argv[++n];
+            } else {
+              goto unrecognized;
+            }
+#endif
           } else if (strcmp("check", arg + 2) == 0) {
             opts->check = 1;
           } else if (strcmp("warn", arg + 2) == 0) {
@@ -560,6 +601,9 @@ int SHA256SUM_MAIN(int argc, char *argv[]) {
             print_help(opts);
             return 0;
           } else {
+#ifdef WITH_SHA512
+unrecognized:
+#endif
             fprintf(stderr, "%s: unrecognized option '%s'\n", argv[0], arg);
             print_try_help(opts);
             return 1;
@@ -569,6 +613,15 @@ int SHA256SUM_MAIN(int argc, char *argv[]) {
           while ((flag = arg[i++]) != '\0') {
             if        (flag == 'c') {
               opts->check = 1;
+#ifdef WITH_SHA512
+            } else if ((opts->hash_sz == 0 || NULL != aopt) && flag == 'a') {
+              if (arg[i] == '\0') {
+                aopt = argv[++n];
+              } else {
+                aopt = arg + i;
+              }
+              break;
+#endif
             } else if (flag == 'w') {
               opts->warn = 1;
               optchk = 1;
@@ -592,18 +645,44 @@ int SHA256SUM_MAIN(int argc, char *argv[]) {
           }
         }
 
-        if (pass == 2 && (opts->check ? optgen : optchk)) {
-          fprintf(
-            stderr, "%s: %s %s with -c/--check\n", opts->arg0, arg,
-            opts->check ? "doesn't work" : "only works"
-          );
-          return 1;
+#ifdef WITH_SHA512
+        if (NULL != aopt) {
+          if (strcmp("sha512", aopt) == 0) {
+            opts->hash_sz = 64;
+          } else if (strcmp("sha384", aopt) == 0) {
+            opts->hash_sz = 48;
+          } else if (strcmp("sha256", aopt) == 0) {
+            opts->hash_sz = 32;
+          } else {
+            fprintf(stderr, "%s: unknown algorithm '%s'\n", argv[0], aopt);
+            print_try_help(opts);
+            return 1;
+          }
+        }
+#endif
+
+        if (pass == 2) {
+          if (opts->check ? optgen : optchk) {
+            fprintf(
+              stderr, "%s: %s %s with -c/--check\n", opts->arg0, arg,
+              opts->check ? "doesn't work" : "only works"
+            );
+            return 1;
+          }
         }
 
         continue;
       }
 
       if (pass == 1) continue;
+
+#ifdef WITH_SHA512
+      if (!opts->check && opts->hash_sz == 0) {
+        fprintf(stderr, "%s: no algorithm set\n", argv[0]);
+        print_try_help(opts);
+        return 1;
+      }
+#endif
 
       /* argument must be a filename */
       ++nfiles;

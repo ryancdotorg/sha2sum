@@ -218,10 +218,11 @@ static void sha2_256_xform(uint32_t *digest, const uint8_t *data, uint32_t nblk)
 #endif
 
 int SHA256_Init(SHA256_CTX *ctx) {
+  for (int i = 0; i < 8; ++i) ctx->state[i] = IV256[i];
+
   ctx->bytelen = 0;
   ctx->datalen = 0;
   ctx->openssl = 0;
-  for (int i = 0; i < 8; ++i) ctx->state[i] = IV256[i];
 
   return 1;
 }

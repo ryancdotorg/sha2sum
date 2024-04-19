@@ -1,9 +1,10 @@
-# sha256sum
+# sha2sum
 
 ## Description
 
-An implementation of the sha256sum command line utility, supporting most of
-the functionality of the GNU core utilities version.
+sha2sum is a re-implementation of the GNU core utilities sha256sum, sha384sum,
+and sha512sum with public domain equivalent licensing. Most of the same
+functionality is supported with identical command line options.
 
 ## Getting Started
 
@@ -14,21 +15,22 @@ None.
 ### Installation
 
 ```
-git clone https://github.com/ryancdotorg/sha256sum.git
-cd sha256sum
+git clone https://github.com/ryancdotorg/sha2sum.git
+cd sha2sum
 make
 ```
 
-You can then copy `bin/sha256sum` where you want it.
+You can then copy `bin/sha2sum` where you want it.
 
 ### Usage
 
 ```
-Usage: sha256sum [OPTION]... [FILE]...
-Print (default) or check SHA256 hashes
+Usage: sha2sum [OPTION]... [FILE]...
+Print (default) or check SHA2 hashes
 
 With no FILE, or when FILE is -, read standard input.
 
+  -a, --algorithm=TYPE SHA2 variant to use (sha256, sha384, or sha512)
   -b, --binary         read in binary mode
   -t, --text           read in text mode (default)
   -c, --check          check hashes from FILE(s)
@@ -40,7 +42,7 @@ Options which affect checking:
       --strict         exit non-zero for malformed input lines
   -w, --warn           print warning for each malformed input line
 
-      --help           show help and exit
+  -h, --help           show help and exit
       --version        show version and exit
 ```
 

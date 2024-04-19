@@ -16,7 +16,11 @@ override CFLAGS += -std=gnu17 -Wall -Wextra -pedantic \
 
 COMPILE = $(CC) $(CPPFLAGS) $(CFLAGS)
 
-all: bin/sha256sum
+
+
+all: bin/sha2sum bin/sha256sum bin/sha384sum bin/sha512sum
+
+
 
 bin/test: obj/test.o
 	@mkdir -p $(@D)
@@ -26,23 +30,21 @@ bin/test_%: src/%.c gen/sha2_const.h
 	@mkdir -p $(@D)
 	$(COMPILE) -DTEST $< $(LDFLAGS) -o $@
 
+
+
 bin/sha256sum: obj/sha256.o obj/sha256sum.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ $(LDFLAGS) -o $@
-
-bin/sha512sum: obj/sha256.o obj/sha512.o obj/sha512sum.o
-	@mkdir -p $(@D)
-	$(COMPILE) $^ $(LDFLAGS) -o $@
-
-bin/sha384sum: bin/sha512sum
-	@mkdir -p $(@D)
-	ln -s sha512sum $@
 
 bin/sha256sum_ossl: obj/sha256sum.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ -lcrypto $(LDFLAGS) -o $@
 
-obj/sha256sum_main.o: src/sha256sum.c
+obj/sha256sum.o: src/sha2sum.c src/sha256.h
+	@mkdir -p $(@D)
+	$(COMPILE) -c $< $(LDFLAGS) -o $@
+
+obj/sha256sum_main.o: src/sha2sum.c
 	@mkdir -p $(@D)
 	$(COMPILE) -DSHA256SUM_MAIN=sha256sum_main -c $< -o $@
 
@@ -50,17 +52,47 @@ obj/sha256sum_multicall.o: obj/sha256sum_main.o obj/sha256.o
 	@mkdir -p $(@D)
 	$(COMPILE) --entry sha256sum_main -r $^ -o $@
 
-obj/sha512sum_main.o: src/sha256sum.c
-	@mkdir -p $(@D)
-	$(COMPILE) -DWITH_SHA512 -DSHA256SUM_MAIN=sha512sum_main -c $< -o $@
 
-obj/sha512sum_multicall.o: obj/sha512sum_main.o obj/sha256.o obj/sha512.o
-	@mkdir -p $(@D)
-	$(COMPILE) --entry sha512sum_main -r $^ -o $@
 
-obj/sha512sum.o: src/sha256sum.c
+bin/sha2sum: obj/sha256.o obj/sha512.o obj/sha2sum.o
 	@mkdir -p $(@D)
-	$(COMPILE) -DWITH_SHA512 -c $^ $(LDFLAGS) -o $@
+	$(COMPILE) $^ $(LDFLAGS) -o $@
+
+bin/sha2sum_ossl: obj/sha2sum.o
+	@mkdir -p $(@D)
+	$(COMPILE) $^ -lcrypto $(LDFLAGS) -o $@
+
+obj/sha2sum.o: src/sha2sum.c src/sha256.h src/sha512.h
+	@mkdir -p $(@D)
+	$(COMPILE) -DWITH_SHA512 -c $< $(LDFLAGS) -o $@
+
+obj/sha2sum_main.o: src/sha2sum.c
+	@mkdir -p $(@D)
+	$(COMPILE) -DWITH_SHA512 -DSHA256SUM_MAIN=sha2sum_main -c $< -o $@
+
+obj/sha2sum_multicall.o: obj/sha2sum_main.o obj/sha256.o obj/sha512.o
+	@mkdir -p $(@D)
+	$(COMPILE) --entry sha2sum_main -r $^ -o $@
+
+
+
+bin/sha384sum: bin/sha2sum
+	@mkdir -p $(@D)
+	ln -s sha2sum $@
+
+bin/sha384sum_ossl: bin/sha2sum_ossl
+	@mkdir -p $(@D)
+	ln -s sha2sum_ossl $@
+
+bin/sha512sum: bin/sha2sum
+	@mkdir -p $(@D)
+	ln -s sha2sum $@
+
+bin/sha512sum_ossl: bin/sha2sum_ossl
+	@mkdir -p $(@D)
+	ln -s sha2sum_ossl $@
+
+
 
 gen/sha2_const.h: scripts/sha2_const.py
 	@mkdir -p $(@D)
@@ -70,6 +102,8 @@ obj/sha%.o: src/sha%.c src/sha%.h gen/sha2_const.h
 	@mkdir -p $(@D)
 	$(COMPILE) -c $< -o $@
 
+
+
 # generic build rules
 obj/%.o: src/%.c src/%.h
 	@mkdir -p $(@D)
@@ -78,6 +112,8 @@ obj/%.o: src/%.c src/%.h
 obj/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(COMPILE) -c $< -o $@
+
+
 
 # hack to force clean to run first *to completion* even for parallel builds
 # note that $(info ...) prints everything on one line

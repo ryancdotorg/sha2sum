@@ -19,4 +19,3 @@ typedef struct {
 int SHA256_Init(SHA256_CTX *);
 int SHA256_Update(SHA256_CTX *, const uint8_t[], size_t);
 int SHA256_Final(uint8_t[], SHA256_CTX *);
-unsigned char *SHA256(const uint8_t[], size_t, uint8_t[]);

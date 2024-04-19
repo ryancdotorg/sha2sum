@@ -18,9 +18,9 @@ COMPILE = $(CC) $(CPPFLAGS) $(CFLAGS)
 
 
 
-all: bin/sha2sum bin/sha256sum bin/sha384sum bin/sha512sum
+all: bin/sha2sum bin/sha256sum
 
-
+links: bin/sha384sum bin/sha512sum
 
 bin/test: obj/test.o
 	@mkdir -p $(@D)

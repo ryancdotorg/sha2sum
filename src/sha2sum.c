@@ -14,9 +14,14 @@
 
 #include "debugp.h"
 
+#ifdef SODIUM
+#include "crypto_hash.h"
+#else
+#include <sodium.h>
 #include "sha256.h"
 #ifdef WITH_SHA512
 #include "sha512.h"
+#endif
 #endif
 
 #define _STR(X) #X

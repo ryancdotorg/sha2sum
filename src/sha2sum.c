@@ -19,6 +19,22 @@
 #include "sha512.h"
 #endif
 
+#define _STR(X) #X
+#define STR(X) _STR(X)
+
+#ifndef VERSION
+#define VERSION v0.0.0
+#endif
+
+#if defined(VARIANT)
+#elif defined(OPENSSL)
+#define VARIANT OpenSSL
+#elif defined(SODIUM)
+#define VARIANT libsodium
+#elif defined(__OPTIMIZE_SIZE__)
+#define VARIANT small
+#endif
+
 #define CHECK_EFMT  -1
 #define CHECK_OKAY   0
 #define CHECK_FAIL   1
@@ -54,7 +70,14 @@ static void print_try_help(sha2sum_opts_t *opts) {
 }
 
 static void print_version() {
-  printf("sha2sum v0.1.0\n");
+  printf("sha2sum " STR(VERSION)
+#ifdef VERSION_EXTRA
+  STR(VERSION_EXTRA)
+#endif
+#ifdef VARIANT
+  " (" STR(VARIANT) ")"
+#endif
+  "\n");
 }
 
 static void print_help(sha2sum_opts_t *opts) {

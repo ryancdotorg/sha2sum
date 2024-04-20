@@ -61,14 +61,13 @@ bin/test_%: src/%.c gen/sha2_const.h
 	$(COMPILE) -DTEST $< $(LDFLAGS) -o $@
 
 
-
 bin/sha256sum: obj/sha256.o obj/sha256sum.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ $(LDFLAGS) -o $@
 
-bin/sha256sum_ossl: obj/sha256sum.o
+bin/sha256sum_ossl: src/sha2sum.c gen/sha2_const.h
 	@mkdir -p $(@D)
-	$(COMPILE) $^ -lcrypto $(LDFLAGS) -o $@
+	$(COMPILE) -DOPENSSL $< -lcrypto $(LDFLAGS) -o $@
 
 obj/sha256sum.o: src/sha2sum.c src/sha256.h
 	@mkdir -p $(@D)
@@ -82,15 +81,19 @@ obj/sha256sum_multicall.o: obj/sha256sum_main.o obj/sha256.o
 	@mkdir -p $(@D)
 	$(COMPILE) --entry sha256sum_main -r $^ -o $@
 
+obj/sha256sum_ossl_multicall.o: src/sha2sum.c gen/sha2_const.h
+	@mkdir -p $(@D)
+	$(COMPILE) -DSHA256SUM_MAIN=sha256sum_main \
+	           -DOPENSSL -c $< -o $@
 
 
 bin/sha2sum: obj/sha256.o obj/sha512.o obj/sha2sum.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ $(LDFLAGS) -o $@
 
-bin/sha2sum_ossl: obj/sha2sum.o
+bin/sha2sum_ossl: src/sha2sum.c gen/sha2_const.h
 	@mkdir -p $(@D)
-	$(COMPILE) $^ -lcrypto $(LDFLAGS) -o $@
+	$(COMPILE) -DWITH_SHA512 -DOPENSSL $< -lcrypto $(LDFLAGS) -o $@
 
 obj/sha2sum.o: src/sha2sum.c src/sha256.h src/sha512.h
 	@mkdir -p $(@D)
@@ -98,12 +101,16 @@ obj/sha2sum.o: src/sha2sum.c src/sha256.h src/sha512.h
 
 obj/sha2sum_main.o: src/sha2sum.c
 	@mkdir -p $(@D)
-	$(COMPILE) -DWITH_SHA512 -DSHA256SUM_MAIN=sha2sum_main -c $< -o $@
+	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main -DWITH_SHA512 -c $< -o $@
 
 obj/sha2sum_multicall.o: obj/sha2sum_main.o obj/sha256.o obj/sha512.o
 	@mkdir -p $(@D)
 	$(COMPILE) --entry sha2sum_main -r $^ -o $@
 
+obj/sha2sum_ossl_multicall.o: src/sha2sum.c gen/sha2_const.h
+	@mkdir -p $(@D)
+	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main \
+	           -DWITH_SHA512 -DOPENSSL -c $< -o $@
 
 
 bin/sha%sum: bin/sha2sum
@@ -125,7 +132,6 @@ obj/sha%.o: src/sha%.c src/sha%.h src/sha2.h gen/sha2_const.h
 	$(COMPILE) -c $< -o $@
 
 
-
 # generic build rules
 obj/%.o: src/%.c src/%.h
 	@mkdir -p $(@D)
@@ -134,7 +140,6 @@ obj/%.o: src/%.c src/%.h
 obj/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(COMPILE) -c $< -o $@
-
 
 
 # hack to force clean to run first *to completion* even for parallel builds

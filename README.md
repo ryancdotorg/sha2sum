@@ -2,9 +2,20 @@
 
 ## Description
 
-sha2sum is a re-implementation of the GNU core utilities sha256sum, sha384sum,
-and sha512sum with public domain equivalent licensing. Most of the same
-functionality is supported with identical command line options.
+`sha2sum` is a re-implementation of `sha256sum`, `sha384sum`, and `sha512sum`
+with public domain equivalent licensing. With the exception of not supporting
+the `-z`, `--zero`, and `--tag` command line options, `sha2sum` can act as
+a drop-in replacement for the GNU core utilities programs of the same names.
+
+Special optimizations are included for faster processing of large blocks of
+`0x00` or `0xff` bytes. This can be useful for computing hashes of storage
+media.
+
+Size-optimized (but slower) hash implementations are also included, and will
+be used if `sha2sum` is built with the `-Os` compiler flag.
+
+Alternatively, `sha2sum` can be linked against `libcrypto` (OpenSSL) which has
+significantly faster assembly implementations for many platforms.
 
 ## Getting Started
 
@@ -12,7 +23,9 @@ functionality is supported with identical command line options.
 
 None.
 
-### Installation
+### Building
+
+Pretty simple.
 
 ```
 git clone https://github.com/ryancdotorg/sha2sum.git
@@ -20,7 +33,44 @@ cd sha2sum
 make
 ```
 
-You can then copy `bin/sha2sum` where you want it.
+If you want the small implementations:
+
+```
+make clean all CFLAGS=-Os
+```
+
+If you want to link OpenSSL (`bin/sha256sum_ossl` and `bin/sha2sum_ossl`):
+
+```
+make ossl
+```
+
+If you want to link libsodium (`bin/sha256sum_nacl` and `bin/sha2sum_nacl`):
+
+```
+make nacl
+```
+
+By default, you get `bin/sha256sum` and `bin/sha2sum`.
+
+`sha256sum` is exactly what you’d expect.
+
+`sha2sum` can automatically detect between sha256, sha384, and sha512 when
+checking hashes, but needs to have one specified via `-a` or `--algorithm` to
+generate hashes. It is a [multi-call binary](https://www.redbooks.ibm.com/abstracts/tips0092.html)
+and will act as `sha256sum`, `sha384sum`, or `sha512sum` if called by an
+appropriate symlink.
+
+There are also make targets for
+
+* `obj/sha2sum_multicall.o` (provides `sha2sum_main`)
+* `obj/sha256sum_multicall.o` (provides `sha256sum_main`)
+* `obj/sha2sum_ossl_multicall.o` (provides `sha2sum_main`)
+* `obj/sha256sum_ossl_multicall.o` (provides `sha256sum_main`)
+* `obj/sha2sum_nacl_multicall.o` (provides `sha2sum_main`)
+* `obj/sha256sum_nacl_multicall.o` (provides `sha256sum_main`)
+
+These can be used to link their functionality into other multi-call binaries.
 
 ### Usage
 
@@ -29,7 +79,6 @@ Usage: sha2sum [OPTION]... [FILE]...
 Print (default) or check SHA2 hashes
 
 With no FILE, or when FILE is -, read standard input.
-
   -a, --algorithm=TYPE SHA2 variant to use (sha256, sha384, or sha512)
   -b, --binary         read in binary mode
   -t, --text           read in text mode (default)

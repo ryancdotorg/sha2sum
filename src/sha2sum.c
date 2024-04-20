@@ -91,7 +91,6 @@ static void print_help(sha2sum_opts_t *opts) {
     "Print (default) or check SHA%d hashes\n"
     "\n"
     "With no FILE, or when FILE is -, read standard input.\n"
-    "\n"
     "%s"
     "  -b, --binary         read in binary mode\n"
     "  -t, --text           read in text mode (default)\n"

@@ -82,7 +82,8 @@ static void print_version() {
 #ifdef VARIANT
   " (" STR(VARIANT) ")"
 #endif
-  "\n");
+  "\n"
+);
 }
 
 static void print_help(sha2sum_opts_t *opts) {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: CC0-1.0+ OR 0BSD OR OR MIT-0
 // Copyright (c) 2024, Ryan Castellucci, no rights reserved
+#pragma once
 
 #define NOINLINE __attribute__ ((noinline))
 

@@ -61,7 +61,8 @@ links_all: links links_ossl links_nacl
 
 multicall: $(patsubst %,obj/sha%sum_multicall.o,2 256)
 multicall_ossl: $(patsubst %,obj/sha%sum_ossl_multicall.o,2 256)
-multicall_nacl: $(patsubst %,obj/sha%sum_nacl_multicall.o,2 256)
+multicall_nacl: obj/sha256sum_nacl_multicall.o \
+	$(patsubst %,obj/sha2sum_%_multicall.o,nacl nacl_sha256 nacl_sha512)
 
 all: links_all multicall multicall_ossl multicall_nacl
 
@@ -99,7 +100,7 @@ obj/sha256sum_multicall.o: obj/sha256sum_main.o obj/sha256.o
 	@mkdir -p $(@D)
 	$(COMPILE) --entry sha256sum_main -r $^ -o $@
 
-obj/sha256sum_nacl_multicall.o: src/sha2sum.c gen/sha2_const.h
+obj/sha256sum_nacl_multicall.o: src/sha2sum.c src/crypto_hash.h
 	@mkdir -p $(@D)
 	$(COMPILE) -DSHA256SUM_MAIN=sha256sum_main \
 	           -DSODIUM -c $< -o $@
@@ -114,11 +115,11 @@ bin/sha2sum: obj/sha256.o obj/sha512.o obj/sha2sum.o
 	@mkdir -p $(@D)
 	$(COMPILE) $^ $(LDFLAGS) -o $@
 
-bin/sha2sum_ossl: src/sha2sum.c gen/sha2_const.h
+bin/sha2sum_ossl: src/sha2sum.c
 	@mkdir -p $(@D)
 	$(COMPILE) -DWITH_SHA512 -DOPENSSL $< -lcrypto $(LDFLAGS) -o $@
 
-bin/sha2sum_nacl: src/sha2sum.c gen/sha2_const.h
+bin/sha2sum_nacl: src/sha2sum.c src/crypto_hash.h gen/sha2_const.h
 	@mkdir -p $(@D)
 	$(COMPILE) -DWITH_SHA512 -DSODIUM $< -lsodium $(LDFLAGS) -o $@
 
@@ -130,14 +131,36 @@ obj/sha2sum_main.o: src/sha2sum.c
 	@mkdir -p $(@D)
 	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main -DWITH_SHA512 -c $< -o $@
 
+obj/sha2sum_nacl_sha256_main.o: src/sha2sum.c src/crypto_hash.h
+	@mkdir -p $(@D)
+	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main \
+	           -DWITH_SHA512 -DSODIUM_SHA256 -c $< -o $@
+
+obj/sha2sum_nacl_sha512_main.o: src/sha2sum.c src/crypto_hash.h gen/sha2_const.h
+	@mkdir -p $(@D)
+	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main \
+	           -DWITH_SHA512 -DSODIUM_SHA512 -c $< -o $@
+
+obj/sha2sum_main.o: src/sha2sum.c
+	@mkdir -p $(@D)
+	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main -DWITH_SHA512 -c $< -o $@
+
 obj/sha2sum_multicall.o: obj/sha2sum_main.o obj/sha256.o obj/sha512.o
 	@mkdir -p $(@D)
 	$(COMPILE) --entry sha2sum_main -r $^ -o $@
 
-obj/sha2sum_nacl_multicall.o: src/sha2sum.c gen/sha2_const.h
+obj/sha2sum_nacl_multicall.o: src/sha2sum.c src/crypto_hash.h gen/sha2_const.h
 	@mkdir -p $(@D)
 	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main \
 	           -DWITH_SHA512 -DSODIUM -c $< -o $@
+
+obj/sha2sum_nacl_sha256_multicall.o: obj/sha2sum_nacl_sha256_main.o obj/sha512.o
+	@mkdir -p $(@D)
+	$(COMPILE) --entry sha2sum_main -r $^ -o $@
+
+obj/sha2sum_nacl_sha512_multicall.o: obj/sha2sum_nacl_sha512_main.o obj/sha256.o
+	@mkdir -p $(@D)
+	$(COMPILE) --entry sha2sum_main -r $^ -o $@
 
 obj/sha2sum_ossl_multicall.o: src/sha2sum.c gen/sha2_const.h
 	@mkdir -p $(@D)

@@ -14,14 +14,26 @@
 
 #include "debugp.h"
 
-#ifdef SODIUM
+#if defined(SODIUM_SHA512) && !defined(WITH_SHA512)
+#define WITH_SHA512
+#endif
+#if defined(SODIUM) && !defined(SODIUM_SHA256)
+#define SODIUM_SHA256
+#endif
+#if defined(SODIUM) && defined(WITH_SHA512) && !defined(SODIUM_SHA512)
+#define SODIUM_SHA512
+#endif
+
+#ifdef SODIUM_SHA256
 #include "crypto_hash.h"
 #else
-#include <sodium.h>
 #include "sha256.h"
-#ifdef WITH_SHA512
-#include "sha512.h"
 #endif
+
+#ifdef SODIUM_SHA512
+#include "crypto_hash.h"
+#else
+#include "sha512.h"
 #endif
 
 #define _STR(X) #X

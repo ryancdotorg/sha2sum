@@ -141,10 +141,6 @@ obj/sha2sum_nacl_sha512_main.o: src/sha2sum.c src/crypto_hash.h gen/sha2_const.h
 	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main \
 	           -DWITH_SHA512 -DSODIUM_SHA512 -c $< -o $@
 
-obj/sha2sum_main.o: src/sha2sum.c
-	@mkdir -p $(@D)
-	$(COMPILE) -DSHA256SUM_MAIN=sha2sum_main -DWITH_SHA512 -c $< -o $@
-
 obj/sha2sum_multicall.o: obj/sha2sum_main.o obj/sha256.o obj/sha512.o
 	@mkdir -p $(@D)
 	$(COMPILE) --entry sha2sum_main -r $^ -o $@

@@ -20,7 +20,7 @@ static const uint32_t IV256[] = {
   SHA256_IV4, SHA256_IV5, SHA256_IV6, SHA256_IV7
 };
 
-#ifdef __OPTIMIZE_SIZE__
+#if defined(__OPTIMIZE_SIZE__) || defined(SMALL_SHA256) || defined(SMALL_SHA2)
 static const uint32_t K256[] = { SHA256_K00,SHA256_K01,SHA256_K02,SHA256_K03,
 SHA256_K04,SHA256_K05,SHA256_K06,SHA256_K07,SHA256_K08,SHA256_K09,SHA256_K10,
 SHA256_K11,SHA256_K12,SHA256_K13,SHA256_K14,SHA256_K15,SHA256_K16,SHA256_K17,
@@ -183,7 +183,7 @@ int SHA256_Update(SHA256_CTX *ctx, const uint8_t data[], size_t len) {
     }
   }
 
-#ifndef __OPTIMIZE_SIZE__
+#if !(defined(__OPTIMIZE_SIZE__) || defined(SMALL_SHA256) || defined(SMALL_SHA2))
   // for large blocks of data, attempt to detect long runs of zero or one bits
   if (len >= 16384) {
     while (len >= (SECTOR_SZ + 31)) {

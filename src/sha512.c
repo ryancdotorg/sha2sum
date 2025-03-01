@@ -26,7 +26,7 @@ static const uint64_t IV384[] = {
   SHA384_IV4, SHA384_IV5, SHA384_IV6, SHA384_IV7
 };
 
-#ifdef __OPTIMIZE_SIZE__
+#if defined(__OPTIMIZE_SIZE__) || defined(SMALL_SHA512) || defined(SMALL_SHA2)
 static const uint64_t K512[] = { SHA512_K00,SHA512_K01,SHA512_K02,SHA512_K03,
 SHA512_K04,SHA512_K05,SHA512_K06,SHA512_K07,SHA512_K08,SHA512_K09,SHA512_K10,
 SHA512_K11,SHA512_K12,SHA512_K13,SHA512_K14,SHA512_K15,SHA512_K16,SHA512_K17,
@@ -205,7 +205,7 @@ int SHA512_Update(SHA512_CTX *ctx, const uint8_t data[], size_t len) {
     }
   }
 
-#ifndef __OPTIMIZE_SIZE__
+#if !(defined(__OPTIMIZE_SIZE__) || defined(SMALL_SHA512) || defined(SMALL_SHA2))
   // for large blocks of data, attempt to detect long runs of zero or one bits
   if (len >= 16384) {
     while (len >= (SECTOR_SZ + 31)) {
